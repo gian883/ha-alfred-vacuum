@@ -111,9 +111,9 @@ class AlfredRobot:
         in caso di problemi, a che punto si è fermata la lettura.
         """
         details: dict[str, Any] = {}
-        out = await self.action(
-            A_MAP_REQUEST, [{"piid": 2, "value": json.dumps({"frame_type": "I"}, separators=(",", ":"))}]
-        )
+        # verificato sul D10 Plus: senza req_type/force_type il robot risponde con campi vuoti
+        frame = json.dumps({"req_type": 1, "frame_type": "I", "force_type": 1}, separators=(",", ":"))
+        out = await self.action(A_MAP_REQUEST, [{"piid": 2, "value": frame}])
         outs = out.get("out", []) if isinstance(out, dict) else (out or [])
         values: dict[int, Any] = {}
         for item in outs:

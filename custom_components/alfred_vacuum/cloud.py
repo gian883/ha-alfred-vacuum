@@ -444,10 +444,21 @@ class XiaomiCloud:
         )
 
     async def get_file_url(self, object_name: str) -> str | None:
-        """URL temporaneo del file mappa caricato dal robot."""
-        result = await self.api("v2/home/get_interim_file_url", {"obj_name": object_name})
-        if isinstance(result, dict):
-            return result.get("url")
+        """URL temporaneo del file mappa caricato dal robot (due indirizzi possibili)."""
+        last: Exception | None = None
+        for path in ("v2/home/get_interim_file_url", "home/getmapfileurl"):
+            try:
+                result = await self.api(path, {"obj_name": object_name})
+            except CloudAuthError:
+                raise
+            except CloudError as err:
+                last = err
+                _LOGGER.debug("%s non disponibile: %s", path, err)
+                continue
+            if isinstance(result, dict) and result.get("url"):
+                return result["url"]
+        if last:
+            raise last
         return None
 
     async def download(self, url: str) -> bytes:
