@@ -140,3 +140,61 @@ async def test_login_with_captcha(monkeypatch):
     finally:
         await client.close()
         await server.close()
+
+
+def _ref_enc_signature(path: str, snonce: str, params: dict) -> str:
+    """Formula pubblica della firma (RC4 API): METODO&percorso&k=v...&signed_nonce, SHA1, base64."""
+    import base64
+    import hashlib
+
+    parts = ["POST", path] + [f"{k}={v}" for k, v in params.items()] + [snonce]
+    return base64.b64encode(hashlib.sha1("&".join(parts).encode()).digest()).decode()
+
+
+async def test_encrypted_api_and_device_list(monkeypatch):
+    import base64
+    import hashlib
+
+    ssecurity = base64.b64encode(b"0123456789abcdef").decode()
+    seen: list[str] = []
+
+    def snonce_of(nonce: str) -> str:
+        return base64.b64encode(hashlib.sha256(base64.b64decode(ssecurity) + base64.b64decode(nonce)).digest()).decode()
+
+    async def handler(request: web.Request):
+        q = dict(request.query)
+        snonce = snonce_of(q["_nonce"])
+        key = base64.b64decode(snonce)
+        path = request.path.replace("/app/", "/", 1)
+        enc = {k: q[k] for k in ("data", "rc4_hash__")}
+        if q["signature"] != _ref_enc_signature(path, snonce, enc):
+            return web.Response(status=400, text="bad signature")
+        assert request.cookies.get("serviceToken") == "ST"
+        data = json.loads(cloud._rc4(key, base64.b64decode(q["data"])).decode())
+        seen.append(path)
+        if path == "/v2/homeroom/gethome":
+            result = {"homelist": [{"id": "111", "uid": 8233}], "share_home_list": []}
+        else:
+            assert data["home_id"] == 111 and data["home_owner"] == 8233
+            result = {"device_info": [{"did": "999", "model": "dreame.vacuum.r2205", "localip": "192.168.1.9", "token": "ab" * 16}]}
+        body = json.dumps({"code": 0, "result": result}).encode()
+        return web.Response(text=base64.b64encode(cloud._rc4(key, body)).decode())
+
+    app = web.Application()
+    app.router.add_post("/app/{tail:.*}", handler)
+    server = TestServer(app)
+    await server.start_server()
+    monkeypatch.setattr(cloud.XiaomiCloud, "api_base", property(lambda self: str(server.make_url("/app"))))
+    client = cloud.XiaomiCloud("de", cloud.CloudSession("8233", "ST", ssecurity, "de"))
+    try:
+        devices = await client.get_devices()
+        assert devices[0]["did"] == "999" and devices[0]["localip"] == "192.168.1.9"
+        assert seen == ["/v2/homeroom/gethome", "/v2/home/home_device_list"]
+    finally:
+        await client.close()
+        await server.close()
+
+
+def test_signature_path():
+    assert cloud.signature_path("https://de.api.io.mi.com/app/v2/home/home_device_list") == "/v2/home/home_device_list"
+    assert cloud.signature_path("https://api.io.mi.com/app/miotspec/prop/get") == "/miotspec/prop/get"

@@ -338,8 +338,10 @@ class XiaomiCloud:
         key = base64.b64decode(snonce)
         fields = {"data": json.dumps(params, separators=(",", ":"))}
 
+        sign_path = signature_path(url)
+
         def enc_signature(values: dict[str, str]) -> str:
-            parts = ["POST", url.split("com", 1)[1]]
+            parts = ["POST", sign_path]
             parts += [f"{k}={v}" for k, v in values.items()]
             parts.append(snonce)
             return base64.b64encode(hashlib.sha1("&".join(parts).encode()).digest()).decode()
@@ -367,7 +369,7 @@ class XiaomiCloud:
             "channel": "MI_APP_STORE",
         }
         http = self._client()
-        async with http.post(url, data=encrypted, headers=headers, cookies=cookies) as resp:
+        async with http.post(url, params=encrypted, headers=headers, cookies=cookies) as resp:
             body = await resp.text()
             status = resp.status
         if status in (401, 403):
@@ -388,11 +390,32 @@ class XiaomiCloud:
 
     # --- funzioni di alto livello ---------------------------------------
     async def get_devices(self) -> list[dict[str, Any]]:
-        result = await self.api(
-            "home/device_list",
-            {"getVirtualModel": True, "getHuamiDevices": 1, "get_split_device": False, "support_smart_home": True},
+        """Tutti i dispositivi dell'account: prima le case, poi i dispositivi di ogni casa."""
+        homes = await self.api(
+            "v2/homeroom/gethome",
+            {"fg": True, "fetch_share": True, "fetch_share_dev": True, "limit": 300, "app_ver": 7},
         )
-        return (result or {}).get("list", [])
+        home_list = list((homes or {}).get("homelist") or [])
+        home_list += list((homes or {}).get("share_home_list") or [])
+        devices: dict[str, dict[str, Any]] = {}
+        for home in home_list:
+            try:
+                result = await self.api(
+                    "v2/home/home_device_list",
+                    {
+                        "home_owner": int(home.get("uid")),
+                        "home_id": int(home.get("id")),
+                        "limit": 200,
+                        "get_split_device": True,
+                        "support_smart_home": True,
+                    },
+                )
+            except (CloudError, TypeError, ValueError) as err:
+                _LOGGER.debug("Dispositivi della casa %s non leggibili: %s", home.get("id"), err)
+                continue
+            for device in (result or {}).get("device_info") or []:
+                devices[str(device.get("did"))] = device
+        return list(devices.values())
 
     async def rpc(self, did: str, method: str, params: Any) -> Any:
         return await self.api(f"home/rpc/{did}", {"method": method, "params": params})
@@ -432,6 +455,12 @@ class XiaomiCloud:
             if resp.status != 200:
                 raise CloudError(f"Download mappa: HTTP {resp.status}")
             return await resp.read()
+
+
+def signature_path(url: str) -> str:
+    """Percorso usato nella firma: senza dominio e senza il prefisso /app."""
+    path = urlparse(url).path
+    return path.replace("/app/", "/", 1) if path.startswith("/app/") else path
 
 
 def session_signature(session: CloudSession) -> str:
