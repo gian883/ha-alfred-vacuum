@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
 from collections.abc import Mapping
 from typing import Any
 
 import aiohttp
 import voluptuous as vol
+from aiohttp import web
 
+from homeassistant.components.http import KEY_HASS, HomeAssistantView
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_TOKEN, CONF_USERNAME
 from homeassistant.core import callback
@@ -50,6 +53,34 @@ COUNTRY_SELECTOR = SelectSelector(
 )
 PASSWORD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
+CAPTCHA_KEY = f"{DOMAIN}_captcha"
+
+
+class CaptchaView(HomeAssistantView):
+    """Serve l'immagine del captcha a un indirizzo casuale e temporaneo."""
+
+    url = f"/api/{DOMAIN}/captcha/{{key}}"
+    name = f"api:{DOMAIN}:captcha"
+    requires_auth = False  # l'indirizzo è un segreto casuale usato una volta sola
+
+    async def get(self, request: web.Request, key: str) -> web.Response:
+        images: dict[str, bytes] = request.app[KEY_HASS].data.get(CAPTCHA_KEY, {})
+        image = images.get(key)
+        if image is None:
+            return web.Response(status=404)
+        return web.Response(body=image, content_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+def _publish_captcha(hass, image: bytes) -> str:
+    images: dict[str, bytes] = hass.data.setdefault(CAPTCHA_KEY, {})
+    if not hass.data.get(f"{CAPTCHA_KEY}_view"):
+        hass.http.register_view(CaptchaView())
+        hass.data[f"{CAPTCHA_KEY}_view"] = True
+    images.clear()  # tengo solo l'ultimo
+    key = secrets.token_urlsafe(24)
+    images[key] = image
+    return f"/api/{DOMAIN}/captcha/{key}"
+
 
 class AlfredConfigFlow(ConfigFlow, domain=DOMAIN):
     """Login Xiaomi oppure IP + token."""
@@ -62,6 +93,9 @@ class AlfredConfigFlow(ConfigFlow, domain=DOMAIN):
         self._challenge: TwoFactorChallenge | None = None
         self._devices: list[dict[str, Any]] = []
         self._country = DEFAULT_COUNTRY
+        self._credentials: tuple[str, str] = ("", "")  # solo in memoria, durante la procedura
+        self._captcha_url = ""
+        self._captcha_wrong = False
 
     @staticmethod
     @callback
@@ -91,15 +125,25 @@ class AlfredConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def _login(self, username: str, password: str, errors: dict[str, str]) -> ConfigFlowResult | None:
-        if self._cloud:
-            await self._cloud.close()
-        self._cloud = XiaomiCloud(self._country)
+    async def _login(
+        self, username: str, password: str, errors: dict[str, str], captcha: str | None = None
+    ) -> ConfigFlowResult | None:
+        if captcha is None:
+            # nuovo tentativo da zero; con il captcha si riusa la stessa sessione (cookie)
+            if self._cloud:
+                await self._cloud.close()
+            self._cloud = XiaomiCloud(self._country)
+        assert self._cloud
+        self._credentials = (username, password)
         try:
-            result = await self._cloud.login(username, password)
-        except CloudCaptchaRequired:
-            errors["base"] = "captcha"
-            return None
+            result = await self._cloud.login(username, password, captcha)
+        except CloudCaptchaRequired as err:
+            if not err.image:
+                errors["base"] = "captcha"
+                return None
+            self._captcha_url = _publish_captcha(self.hass, err.image)
+            self._captcha_wrong = err.wrong
+            return await self.async_step_captcha()
         except CloudAuthError:
             errors["base"] = "invalid_auth"
             return None
@@ -112,6 +156,23 @@ class AlfredConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self.async_step_verify()
         self._session = result
         return await self._after_login()
+
+    async def async_step_captcha(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Mostra l'immagine del captcha e chiede il testo."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            username, password = self._credentials
+            result = await self._login(username, password, errors, captcha=user_input["captcha"])
+            if result is not None:
+                return result
+        elif self._captcha_wrong:
+            errors["base"] = "captcha_wrong"
+        return self.async_show_form(
+            step_id="captcha",
+            data_schema=vol.Schema({vol.Required("captcha"): str}),
+            description_placeholders={"image": f"![captcha]({self._captcha_url})"},
+            errors=errors,
+        )
 
     async def async_step_verify(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
@@ -133,6 +194,8 @@ class AlfredConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def _after_login(self) -> ConfigFlowResult:
+        self.hass.data.get(CAPTCHA_KEY, {}).clear()
+        self._credentials = ("", "")
         if self.source == "reauth":
             return await self._finish_reauth()
         return await self.async_step_device()

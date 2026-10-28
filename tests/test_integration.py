@@ -167,3 +167,43 @@ async def test_config_flow_cloud_with_2fa(hass: HomeAssistant) -> None:
         assert result["data"][CONF_HOST] == "192.168.5.80"
         assert "password" not in result["data"]  # la password non viene salvata
         assert result["title"] == "ALFRED"
+
+
+async def test_config_flow_captcha(hass: HomeAssistant, hass_client_no_auth) -> None:
+    from custom_components.alfred_vacuum.cloud import CloudCaptchaRequired
+
+    session = CloudSession("1", "tok", "cw==", "de")
+    devices = [{"did": "999", "model": "dreame.vacuum.r2205", "name": "ALFRED", "localip": "1.2.3.4", "token": "ab" * 16}]
+    calls: list = []
+
+    async def fake_login(self, username, password, captcha=None):
+        calls.append(captcha)
+        if captcha is None:
+            raise CloudCaptchaRequired(b"JPEGDATA")
+        if captcha == "sbagliato":
+            raise CloudCaptchaRequired(b"JPEG2", wrong=True)
+        return session
+
+    assert await __import__("homeassistant.setup", fromlist=["x"]).async_setup_component(hass, "http", {})
+    with (
+        patch("custom_components.alfred_vacuum.cloud.XiaomiCloud.login", fake_login),
+        patch("custom_components.alfred_vacuum.cloud.XiaomiCloud.get_devices", AsyncMock(return_value=devices)),
+        patch("custom_components.alfred_vacuum.async_setup_entry", AsyncMock(return_value=True)),
+    ):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "cloud"})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"username": "me", "password": "pw", "country": "de"}
+        )
+        assert result["step_id"] == "captcha"
+        url = result["description_placeholders"]["image"].split("(")[1].rstrip(")")
+        client = await hass_client_no_auth()
+        resp = await client.get(url)
+        assert resp.status == 200 and await resp.read() == b"JPEGDATA"
+
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"captcha": "sbagliato"})
+        assert result["step_id"] == "captcha" and result["errors"] == {"base": "captcha_wrong"}
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"captcha": "ab12c"})
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert calls == [None, "sbagliato", "ab12c"]
+        assert (await client.get(url)).status == 404  # immagine eliminata dopo il login

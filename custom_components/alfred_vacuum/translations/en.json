@@ -14,6 +14,11 @@
         "description": "Use the same account as the Xiaomi Home app. The password is only used now and is not stored.",
         "data": { "username": "Email, phone or Xiaomi ID", "password": "Password", "country": "Server" }
       },
+      "captcha": {
+        "title": "Xiaomi captcha",
+        "description": "Xiaomi asks to confirm you are not a robot. Type the characters in the image:\n\n{image}",
+        "data": { "captcha": "Characters in the image" }
+      },
       "verify": {
         "title": "Two-step verification",
         "description": "Xiaomi sent a code to {target}. Enter it below.",
@@ -34,7 +39,8 @@
     "error": {
       "invalid_auth": "Wrong username or password",
       "invalid_code": "Invalid verification code",
-      "captcha": "Xiaomi requires a captcha: sign in once at account.xiaomi.com in a browser and retry",
+      "captcha": "Xiaomi requires a captcha but the image could not be downloaded: retry shortly",
+      "captcha_wrong": "Wrong characters: try again with the new image",
       "cannot_connect": "Cannot connect",
       "invalid_token": "The token must be 32 hexadecimal characters"
     },

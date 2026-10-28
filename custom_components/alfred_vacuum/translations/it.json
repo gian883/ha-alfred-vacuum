@@ -18,6 +18,11 @@
           "country": "Server"
         }
       },
+      "captcha": {
+        "title": "Captcha Xiaomi",
+        "description": "Xiaomi chiede di confermare che non sei un robot. Scrivi i caratteri dell'immagine:\n\n{image}",
+        "data": { "captcha": "Caratteri dell'immagine" }
+      },
       "verify": {
         "title": "Verifica in due passaggi",
         "description": "Xiaomi ha inviato un codice a {target}. Inseriscilo qui sotto.",
@@ -46,7 +51,8 @@
     "error": {
       "invalid_auth": "Utente o password non corretti",
       "invalid_code": "Codice di verifica non valido",
-      "captcha": "Xiaomi chiede un captcha: accedi una volta su account.xiaomi.com dal browser e riprova",
+      "captcha": "Xiaomi chiede un captcha ma non è stato possibile scaricare l'immagine: riprova tra poco",
+      "captcha_wrong": "Caratteri non corretti: riprova con la nuova immagine",
       "cannot_connect": "Impossibile collegarsi",
       "invalid_token": "Il token deve avere 32 caratteri esadecimali"
     },

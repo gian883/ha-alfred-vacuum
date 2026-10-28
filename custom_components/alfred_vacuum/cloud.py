@@ -45,7 +45,12 @@ class CloudAuthError(CloudError):
 
 
 class CloudCaptchaRequired(CloudError):
-    """Xiaomi chiede un captcha: va fatto il login dall'app/sito una volta."""
+    """Xiaomi chiede un captcha: l'immagine va mostrata all'utente."""
+
+    def __init__(self, image: bytes | None, wrong: bool = False) -> None:
+        super().__init__("Xiaomi chiede un captcha")
+        self.image = image
+        self.wrong = wrong
 
 
 @dataclass
@@ -137,8 +142,25 @@ class XiaomiCloud:
         return f"https://{prefix}api.io.mi.com/app"
 
     # --- login -----------------------------------------------------------
-    async def login(self, username: str, password: str) -> CloudSession | TwoFactorChallenge:
-        """Esegue il login. Può restituire una richiesta di verifica in due passaggi."""
+    async def _captcha_image(self, url: str) -> bytes | None:
+        """Scarica l'immagine del captcha (imposta anche il cookie 'ick')."""
+        full = url if url.startswith("http") else f"{ACCOUNT}{url}"
+        try:
+            async with self._client().get(full) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+        except aiohttp.ClientError as err:
+            _LOGGER.debug("Captcha non scaricabile: %s", err)
+        return None
+
+    async def login(
+        self, username: str, password: str, captcha: str | None = None
+    ) -> CloudSession | TwoFactorChallenge:
+        """Esegue il login. Può restituire una richiesta di verifica in due passaggi.
+
+        Se Xiaomi chiede un captcha solleva CloudCaptchaRequired con l'immagine:
+        la si mostra all'utente e si richiama login() con il testo letto.
+        """
         http = self._client()
         async with http.get(f"{ACCOUNT}/pass/serviceLogin", params={"sid": SID, "_json": "true"}) as resp:
             step1 = _json(await resp.text())
@@ -155,13 +177,14 @@ class XiaomiCloud:
             "_sign": step1.get("_sign", ""),
             "_json": "true",
         }
+        if captcha:
+            data["captCode"] = captcha.strip()
         async with http.post(f"{ACCOUNT}/pass/serviceLoginAuth2", data=data) as resp:
             step2 = _json(await resp.text())
 
         if step2.get("captchaUrl"):
-            raise CloudCaptchaRequired(
-                "Xiaomi chiede un captcha: accedi una volta da https://account.xiaomi.com e riprova"
-            )
+            image = await self._captcha_image(step2["captchaUrl"])
+            raise CloudCaptchaRequired(image, wrong=bool(captcha))
         if step2.get("notificationUrl"):
             self._login_state = {"username": username, "password": password}
             return await self._start_2fa(step2["notificationUrl"])
