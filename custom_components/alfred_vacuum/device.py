@@ -125,6 +125,9 @@ class AlfredRobot:
         details["out_piids"] = sorted(values)
         map_text = values.get(1)
         object_name = values.get(3)
+        if not object_name and isinstance(values.get(13), str) and values[13]:
+            # il D10 Plus a volte risponde in piid 13 con "<n>,<uid>/<did>/<indice>"
+            object_name = values[13].split(",", 1)[-1]
         details["object_name"] = object_name
         details["inline_map_length"] = len(map_text) if isinstance(map_text, str) else 0
 
