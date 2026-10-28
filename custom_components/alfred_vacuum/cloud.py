@@ -209,9 +209,15 @@ class XiaomiCloud:
 
     # --- verifica in due passaggi ---------------------------------------
     async def _start_2fa(self, notification_url: str) -> TwoFactorChallenge:
+        """Avvia la verifica: apre il link (crea la sessione di identità) e fa inviare il codice."""
         http = self._client()
         context = parse_qs(urlparse(notification_url).query).get("context", [""])[0]
         self._login_state["context"] = context
+        # 1) apertura del link: imposta il cookie 'identity_session', senza il quale
+        #    Xiaomi rifiuta qualsiasi codice
+        async with http.get(notification_url, allow_redirects=True) as resp:
+            await resp.read()
+        # 2) metodi di verifica disponibili (4 = SMS, 8 = email)
         async with http.get(
             f"{ACCOUNT}/identity/list",
             params={"sid": SID, "context": context, "_locale": "it_IT"},
@@ -220,6 +226,8 @@ class XiaomiCloud:
         try:
             flag = int(_json(text).get("flag", 8))
         except (ValueError, TypeError):
+            flag = 8
+        if flag not in (4, 8):
             flag = 8
         challenge = TwoFactorChallenge(notification_url=notification_url, flag=flag)
         kind = "Phone" if flag == 4 else "Email"
@@ -240,32 +248,72 @@ class XiaomiCloud:
         http = self._client()
         flag = self._login_state.get("flag", 8)
         kind = "Phone" if flag == 4 else "Email"
+        context = self._login_state.get("context", "")
+        # 3) conferma del codice
         async with http.post(
             f"{ACCOUNT}/identity/auth/verify{kind}",
-            params={
-                "_flag": str(flag),
-                "ticket": code.strip(),
-                "trust": "true",
-                "_json": "true",
-                "context": self._login_state.get("context", ""),
-            },
-            data={"_flag": str(flag), "ticket": code.strip(), "trust": "true", "_json": "true"},
+            params={"_flag": str(flag), "_json": "true", "sid": SID, "context": context, "mask": "0", "_locale": "it_IT"},
+            data={"_flag": str(flag), "ticket": code.strip(), "trust": "true", "_json": "true", "ick": self._cookie("ick") or ""},
         ) as resp:
-            res = _json(await resp.text())
-        if res.get("code") != 0 or not res.get("location"):
+            text = await resp.text()
+            location = resp.headers.get("Location")
+        try:
+            res = _json(text)
+        except ValueError:
+            res = {}
+        if res.get("code") not in (0, None):
+            _LOGGER.warning(
+                "Xiaomi ha rifiutato il codice: code=%s %s", res.get("code"), res.get("tips") or res.get("description") or ""
+            )
             raise CloudAuthError("Codice di verifica non valido")
-        async with http.get(res["location"], allow_redirects=True) as resp:
-            await resp.read()
-        # ora il cookie passToken permette di ottenere ssecurity senza password
-        async with http.get(f"{ACCOUNT}/pass/serviceLogin", params={"sid": SID, "_json": "true"}) as resp:
-            again = _json(await resp.text())
-        if not again.get("ssecurity"):
-            # ultimo tentativo con la password, ora che il dispositivo è fidato
+        location = res.get("location") or location
+        if not location:
+            # alcune risposte non contengono l'indirizzo: lo chiedo direttamente
+            async with http.get(
+                f"{ACCOUNT}/identity/result/check",
+                params={"sid": SID, "context": context, "_locale": "it_IT"},
+                allow_redirects=False,
+            ) as resp:
+                location = resp.headers.get("Location")
+        if not location:
+            raise CloudAuthError("Codice di verifica non valido")
+
+        # 4) catena di fine login: result/check -> serviceLoginAuth2/end -> sts
+        if "identity/result/check" in location:
+            async with http.get(location, allow_redirects=False) as resp:
+                location = resp.headers.get("Location") or location
+        ssecurity = None
+        sts_url = None
+        for _ in range(2):  # la prima risposta a volte è una pagina 'Tips'
+            async with http.get(location, allow_redirects=False) as resp:
+                pragma = resp.headers.get("extension-pragma")
+                sts_url = resp.headers.get("Location")
+                body = await resp.text()
+            if pragma:
+                try:
+                    ssecurity = json.loads(pragma).get("ssecurity")
+                except ValueError:
+                    ssecurity = None
+            if ssecurity or sts_url:
+                break
+        if not sts_url and "https://sts.api.io.mi.com/sts" in body:
+            start = body.find("https://sts.api.io.mi.com/sts")
+            sts_url = body[start : body.find('"', start)]
+        if not ssecurity or not sts_url:
+            # ripiego: con il dispositivo ora fidato il login normale non chiede più il codice
             result = await self.login(self._login_state["username"], self._login_state["password"])
             if isinstance(result, TwoFactorChallenge):
                 raise CloudAuthError("Xiaomi chiede di nuovo la verifica")
             return result
-        return await self._finish(again)
+        async with http.get(sts_url, allow_redirects=True) as resp:
+            await resp.read()
+        token = self._cookie("serviceToken")
+        user_id = self._cookie("userId")
+        if not token or not user_id:
+            raise CloudAuthError("Login completato ma senza serviceToken")
+        self.session = CloudSession(user_id=user_id, service_token=token, ssecurity=ssecurity, country=self.country)
+        self._login_state = {}
+        return self.session
 
     # --- chiamate firmate -----------------------------------------------
     def _signed_nonce(self, nonce: str) -> str:
