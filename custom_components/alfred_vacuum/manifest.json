@@ -1,0 +1,12 @@
+{
+  "domain": "alfred_vacuum",
+  "name": "Alfred Vacuum (Dreame D10 Plus)",
+  "codeowners": ["@gian883"],
+  "config_flow": true,
+  "documentation": "https://github.com/gian883/ha-alfred-vacuum",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/gian883/ha-alfred-vacuum/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

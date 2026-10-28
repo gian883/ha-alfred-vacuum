@@ -1,0 +1,65 @@
+clean_rooms:
+  fields:
+    entity_id:
+      selector:
+        entity:
+          integration: alfred_vacuum
+          domain: vacuum
+    rooms:
+      required: true
+      example: '["Cucina", "Bagno"]'
+      selector:
+        object:
+    repeats:
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+    fan_speed:
+      selector:
+        select:
+          options: ["Silenziosa", "Standard", "Forte", "Turbo"]
+    water:
+      selector:
+        select:
+          options: ["Bassa", "Media", "Alta"]
+
+refresh_map:
+  fields:
+    entity_id:
+      selector:
+        entity:
+          integration: alfred_vacuum
+          domain: vacuum
+
+send_command:
+  fields:
+    entity_id:
+      selector:
+        entity:
+          integration: alfred_vacuum
+          domain: vacuum
+    command:
+      required: true
+      selector:
+        select:
+          options: ["get_properties", "set_property", "action"]
+    siid:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 30
+    id:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 50
+    value:
+      selector:
+        object:
+    params:
+      selector:
+        object:

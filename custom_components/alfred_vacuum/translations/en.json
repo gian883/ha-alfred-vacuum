@@ -1,0 +1,148 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Alfred Vacuum – Dreame D10 Plus",
+        "description": "How do you want to connect the robot?",
+        "menu_options": {
+          "cloud": "Xiaomi account (recommended: local commands + room names)",
+          "manual": "Local network only (IP and token, no room names)"
+        }
+      },
+      "cloud": {
+        "title": "Xiaomi account",
+        "description": "Use the same account as the Xiaomi Home app. The password is only used now and is not stored.",
+        "data": { "username": "Email, phone or Xiaomi ID", "password": "Password", "country": "Server" }
+      },
+      "verify": {
+        "title": "Two-step verification",
+        "description": "Xiaomi sent a code to {target}. Enter it below.",
+        "data": { "code": "Code" }
+      },
+      "device": { "title": "Choose the robot", "data": { "did": "Robot" } },
+      "manual": {
+        "title": "Local connection",
+        "description": "IP address and token (32 characters) of the robot.",
+        "data": { "host": "IP address", "token": "Token", "did": "Device ID (optional)", "name": "Name" }
+      },
+      "reauth_confirm": {
+        "title": "Sign in to Xiaomi again",
+        "description": "The Xiaomi session expired. Enter your credentials again (the password is not stored).",
+        "data": { "username": "Email, phone or Xiaomi ID", "password": "Password" }
+      }
+    },
+    "error": {
+      "invalid_auth": "Wrong username or password",
+      "invalid_code": "Invalid verification code",
+      "captcha": "Xiaomi requires a captcha: sign in once at account.xiaomi.com in a browser and retry",
+      "cannot_connect": "Cannot connect",
+      "invalid_token": "The token must be 32 hexadecimal characters"
+    },
+    "abort": {
+      "already_configured": "This robot is already configured",
+      "no_devices": "No Dreame D10 Plus (dreame.vacuum.r2205) found in the account",
+      "cannot_connect": "Cannot read the device list",
+      "reauth_successful": "Sign-in renewed"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "room_names": "Custom room names",
+          "scan_interval": "State update (seconds)",
+          "map_interval": "Map refresh (minutes)"
+        },
+        "data_description": { "room_names": "Optional. Example: 1=Living room, 4=Kitchen. Overrides names read from the map." }
+      }
+    }
+  },
+  "selector": {
+    "country": {
+      "options": {
+        "de": "Europe (de)", "cn": "China (cn)", "us": "United States (us)", "ru": "Russia (ru)",
+        "sg": "Singapore (sg)", "i2": "India (i2)", "tw": "Taiwan (tw)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": { "name": "Battery" },
+      "status": { "name": "Status" },
+      "charging_state": { "name": "Charging" },
+      "cleaning_time": { "name": "Cleaning time" },
+      "cleaning_area": { "name": "Cleaned area" },
+      "error": { "name": "Error code" },
+      "faults": { "name": "Faults" },
+      "work_mode": { "name": "Work mode" },
+      "task_status": { "name": "Task status" },
+      "main_brush_left": { "name": "Main brush hours left" },
+      "main_brush_life": { "name": "Main brush" },
+      "side_brush_left": { "name": "Side brush hours left" },
+      "side_brush_life": { "name": "Side brush" },
+      "filter_life": { "name": "Filter" },
+      "filter_left": { "name": "Filter hours left" },
+      "total_time": { "name": "Total cleaning time" },
+      "total_count": { "name": "Total cleanings" },
+      "total_area": { "name": "Total cleaned area" },
+      "dust_status": { "name": "Emptying status" },
+      "rooms": { "name": "Rooms" },
+      "current_room": { "name": "Current room" }
+    },
+    "binary_sensor": { "water_tank": { "name": "Water tank" } },
+    "select": {
+      "fan_speed": { "name": "Suction power" },
+      "water_level": { "name": "Water level" },
+      "selected_room": { "name": "Room to clean" }
+    },
+    "number": {
+      "volume": { "name": "Volume" },
+      "auto_empty_every": { "name": "Empty every N cleanings" }
+    },
+    "switch": {
+      "auto_empty": { "name": "Auto empty" },
+      "carpet_boost": { "name": "Carpet boost" },
+      "resume_after_charge": { "name": "Resume after charging" },
+      "do_not_disturb": { "name": "Do not disturb" }
+    },
+    "button": {
+      "empty_bin": { "name": "Empty dust bin" },
+      "reset_main_brush": { "name": "Reset main brush" },
+      "reset_side_brush": { "name": "Reset side brush" },
+      "reset_filter": { "name": "Reset filter" },
+      "clean_selected_room": { "name": "Clean selected room" },
+      "refresh_map": { "name": "Refresh map" }
+    }
+  },
+  "services": {
+    "clean_rooms": {
+      "name": "Clean rooms",
+      "description": "Cleans one or more rooms, by name or number.",
+      "fields": {
+        "entity_id": { "name": "Robot", "description": "The robot (optional if you have only one)." },
+        "rooms": { "name": "Rooms", "description": "List of names or numbers, e.g. [\"Kitchen\"] or [4, 2]." },
+        "repeats": { "name": "Passes", "description": "How many times to clean each room (1-3)." },
+        "fan_speed": { "name": "Suction", "description": "Empty = current setting." },
+        "water": { "name": "Water", "description": "Empty = current setting." }
+      }
+    },
+    "refresh_map": {
+      "name": "Refresh map",
+      "description": "Requests the map from the robot and updates room names. Returns the read details.",
+      "fields": { "entity_id": { "name": "Robot", "description": "The robot (optional)." } }
+    },
+    "send_command": {
+      "name": "MIoT command",
+      "description": "For testing: read/write a property or run an action and return the reply.",
+      "fields": {
+        "entity_id": { "name": "Robot", "description": "The robot (optional)." },
+        "command": { "name": "Command", "description": "get_properties, set_property or action." },
+        "siid": { "name": "siid", "description": "Service number." },
+        "id": { "name": "piid / aiid", "description": "Property or action number." },
+        "value": { "name": "Value", "description": "For set_property." },
+        "params": { "name": "Parameters", "description": "For action: list of {piid, value}." }
+      }
+    }
+  }
+}

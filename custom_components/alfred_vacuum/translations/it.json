@@ -1,0 +1,171 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Alfred Vacuum – Dreame D10 Plus",
+        "description": "Come vuoi collegare il robot?",
+        "menu_options": {
+          "cloud": "Account Xiaomi (consigliato: comandi in locale + nomi delle stanze)",
+          "manual": "Solo rete locale (IP e token, senza nomi delle stanze)"
+        }
+      },
+      "cloud": {
+        "title": "Account Xiaomi",
+        "description": "Usa lo stesso account dell'app Xiaomi Home. La password serve solo ora: non viene salvata.",
+        "data": {
+          "username": "Email, telefono o ID Xiaomi",
+          "password": "Password",
+          "country": "Server"
+        }
+      },
+      "verify": {
+        "title": "Verifica in due passaggi",
+        "description": "Xiaomi ha inviato un codice a {target}. Inseriscilo qui sotto.",
+        "data": { "code": "Codice" }
+      },
+      "device": {
+        "title": "Scegli il robot",
+        "data": { "did": "Robot" }
+      },
+      "manual": {
+        "title": "Collegamento locale",
+        "description": "Indirizzo IP e token (32 caratteri) del robot.",
+        "data": {
+          "host": "Indirizzo IP",
+          "token": "Token",
+          "did": "ID dispositivo (facoltativo)",
+          "name": "Nome"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Accedi di nuovo a Xiaomi",
+        "description": "La sessione Xiaomi è scaduta. Inserisci di nuovo le credenziali (la password non viene salvata).",
+        "data": { "username": "Email, telefono o ID Xiaomi", "password": "Password" }
+      }
+    },
+    "error": {
+      "invalid_auth": "Utente o password non corretti",
+      "invalid_code": "Codice di verifica non valido",
+      "captcha": "Xiaomi chiede un captcha: accedi una volta su account.xiaomi.com dal browser e riprova",
+      "cannot_connect": "Impossibile collegarsi",
+      "invalid_token": "Il token deve avere 32 caratteri esadecimali"
+    },
+    "abort": {
+      "already_configured": "Questo robot è già configurato",
+      "no_devices": "Nessun Dreame D10 Plus (dreame.vacuum.r2205) trovato nell'account",
+      "cannot_connect": "Impossibile leggere l'elenco dei dispositivi",
+      "reauth_successful": "Accesso rinnovato"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni",
+        "data": {
+          "room_names": "Nomi stanze personalizzati",
+          "scan_interval": "Aggiornamento stato (secondi)",
+          "map_interval": "Rilettura mappa (minuti)"
+        },
+        "data_description": {
+          "room_names": "Facoltativo. Esempio: 1=Soggiorno, 4=Cucina. Sostituisce i nomi letti dalla mappa."
+        }
+      }
+    }
+  },
+  "selector": {
+    "country": {
+      "options": {
+        "de": "Europa (de)",
+        "cn": "Cina (cn)",
+        "us": "Stati Uniti (us)",
+        "ru": "Russia (ru)",
+        "sg": "Singapore (sg)",
+        "i2": "India (i2)",
+        "tw": "Taiwan (tw)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": { "name": "Batteria" },
+      "status": { "name": "Stato" },
+      "charging_state": { "name": "Ricarica" },
+      "cleaning_time": { "name": "Durata pulizia" },
+      "cleaning_area": { "name": "Area pulita" },
+      "error": { "name": "Codice errore" },
+      "faults": { "name": "Anomalie" },
+      "work_mode": { "name": "Modalità di lavoro" },
+      "task_status": { "name": "Stato attività" },
+      "main_brush_left": { "name": "Spazzola principale – ore residue" },
+      "main_brush_life": { "name": "Spazzola principale" },
+      "side_brush_left": { "name": "Spazzola laterale – ore residue" },
+      "side_brush_life": { "name": "Spazzola laterale" },
+      "filter_life": { "name": "Filtro" },
+      "filter_left": { "name": "Filtro – ore residue" },
+      "total_time": { "name": "Tempo totale di pulizia" },
+      "total_count": { "name": "Pulizie totali" },
+      "total_area": { "name": "Area totale pulita" },
+      "dust_status": { "name": "Stato svuotamento" },
+      "rooms": { "name": "Stanze" },
+      "current_room": { "name": "Stanza attuale" }
+    },
+    "binary_sensor": {
+      "water_tank": { "name": "Serbatoio acqua" }
+    },
+    "select": {
+      "fan_speed": { "name": "Potenza di aspirazione" },
+      "water_level": { "name": "Livello acqua" },
+      "selected_room": { "name": "Stanza da pulire" }
+    },
+    "number": {
+      "volume": { "name": "Volume" },
+      "auto_empty_every": { "name": "Svuota ogni N pulizie" }
+    },
+    "switch": {
+      "auto_empty": { "name": "Svuotamento automatico" },
+      "carpet_boost": { "name": "Potenza extra sui tappeti" },
+      "resume_after_charge": { "name": "Riprendi dopo la ricarica" },
+      "do_not_disturb": { "name": "Non disturbare" }
+    },
+    "button": {
+      "empty_bin": { "name": "Svuota contenitore" },
+      "reset_main_brush": { "name": "Azzera spazzola principale" },
+      "reset_side_brush": { "name": "Azzera spazzola laterale" },
+      "reset_filter": { "name": "Azzera filtro" },
+      "clean_selected_room": { "name": "Pulisci stanza selezionata" },
+      "refresh_map": { "name": "Rileggi mappa" }
+    }
+  },
+  "services": {
+    "clean_rooms": {
+      "name": "Pulisci stanze",
+      "description": "Pulisce una o più stanze, indicate per nome o numero.",
+      "fields": {
+        "entity_id": { "name": "Robot", "description": "Il robot (facoltativo se ne hai uno solo)." },
+        "rooms": { "name": "Stanze", "description": "Elenco di nomi o numeri, es. [\"Cucina\", \"Bagno\"] oppure [4, 2]." },
+        "repeats": { "name": "Passate", "description": "Quante volte pulire ogni stanza (1-3)." },
+        "fan_speed": { "name": "Potenza", "description": "Se vuoto usa la potenza attuale." },
+        "water": { "name": "Acqua", "description": "Se vuoto usa il livello attuale." }
+      }
+    },
+    "refresh_map": {
+      "name": "Rileggi mappa",
+      "description": "Chiede la mappa al robot e aggiorna i nomi delle stanze. Restituisce i dettagli della lettura.",
+      "fields": {
+        "entity_id": { "name": "Robot", "description": "Il robot (facoltativo)." }
+      }
+    },
+    "send_command": {
+      "name": "Comando MIoT",
+      "description": "Per prove e diagnosi: legge/scrive una proprietà o esegue un'azione e restituisce la risposta.",
+      "fields": {
+        "entity_id": { "name": "Robot", "description": "Il robot (facoltativo)." },
+        "command": { "name": "Comando", "description": "get_properties, set_property o action." },
+        "siid": { "name": "siid", "description": "Numero del servizio." },
+        "id": { "name": "piid / aiid", "description": "Numero della proprietà o dell'azione." },
+        "value": { "name": "Valore", "description": "Per set_property." },
+        "params": { "name": "Parametri", "description": "Per action: lista di {piid, value}." }
+      }
+    }
+  }
+}
