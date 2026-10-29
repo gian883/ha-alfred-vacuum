@@ -116,7 +116,10 @@ def render(data: MapData, rooms: dict[int, Room], highlight: set[int] | None = N
         room = value & 0x3F
         col, row = index % data.width, index // data.width
         y = data.height - 1 - row
-        if room in colors:
+        if value & 0x80:
+            # bit alto = bordo/muro della stanza (verificato sul D10 Plus: valori 129-134)
+            px[col, y] = WALL
+        elif room in colors:
             r, g, b = colors[room]
             alpha = 255 if not highlight or room in highlight else 110
             px[col, y] = (r, g, b, alpha)
