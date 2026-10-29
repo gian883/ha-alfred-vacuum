@@ -186,6 +186,16 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         await self.async_request_refresh()
         return names
 
+    async def async_clean_zones(
+        self, zones: list[list[float]], source: str = "zona", repeats: int = 1,
+        fan: int | None = None, water: int | None = None,
+    ) -> None:
+        """Pulisce dei rettangoli disegnati sulla mappa (coordinate del robot)."""
+        await self.robot.clean_zones(zones, self.data or {}, repeats=repeats, fan=fan, water=water)
+        if self.session is None:
+            self._pending = (source, None, False)
+        await self.async_request_refresh()
+
     async def async_clean_all(self, source: str = "manuale") -> None:
         await self.robot.action(A_START)
         if self.session is None:  # se era in pausa riprende la sessione esistente

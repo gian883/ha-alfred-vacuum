@@ -21,6 +21,7 @@ from .const import (
     PIID_WORK_MODE,
     POLLED_PROPERTIES,
     WORK_MODE_ROOMS,
+    WORK_MODE_ZONE,
 )
 from .map_decoder import MapData, MapDecodeError, decode
 from .miio import MiioClient, MiioDeviceError, MiioError
@@ -100,6 +101,45 @@ class AlfredRobot:
             [
                 {"piid": PIID_EXTEND_DATA, "value": extend},
                 {"piid": PIID_WORK_MODE, "value": WORK_MODE_ROOMS},
+            ],
+        )
+
+    async def clean_zones(
+        self,
+        zones: list[list[float]],
+        state: dict[tuple[int, int], Any],
+        repeats: int = 1,
+        fan: int | None = None,
+        water: int | None = None,
+    ) -> None:
+        """Pulisce uno o più rettangoli (coordinate del robot, mm).
+
+        Ogni zona è [x1, y1, x2, y2, passate, potenza 0-3, acqua 1-3];
+        stessa azione della pulizia per stanza, modalità di lavoro 19 (zona).
+        """
+        if not zones:
+            raise RobotError("Nessuna zona indicata")
+        if len(zones) > 5:
+            raise RobotError("Al massimo 5 zone per volta")
+        fan_value = fan if fan is not None else int(state.get(P_FAN, 1) or 1)
+        water_value = water if water is not None else int(state.get(P_MOP, 1) or 1)
+        if water_value not in MOP_LEVELS:
+            water_value = 1
+        areas = []
+        for zone in zones:
+            if len(zone) < 4:
+                raise RobotError(f"Zona non valida: {zone}")
+            x1, y1, x2, y2 = (int(round(float(v))) for v in zone[:4])
+            if x1 == x2 or y1 == y2:
+                raise RobotError("Zona vuota: disegna un rettangolo")
+            areas.append([min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2),
+                          max(1, min(3, int(repeats))), int(fan_value), int(water_value)])
+        extend = json.dumps({"areas": areas}, separators=(",", ":"))
+        await self.action(
+            A_AREA_CLEAN,
+            [
+                {"piid": PIID_EXTEND_DATA, "value": extend},
+                {"piid": PIID_WORK_MODE, "value": WORK_MODE_ZONE},
             ],
         )
 

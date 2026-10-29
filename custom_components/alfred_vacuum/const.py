@@ -64,6 +64,7 @@ SERVICE_CLEAN_ROOMS: Final = "clean_rooms"
 SERVICE_REFRESH_MAP: Final = "refresh_map"
 SERVICE_SEND_COMMAND: Final = "send_command"
 SERVICE_CLEAN_OVERDUE: Final = "clean_overdue"
+SERVICE_CLEAN_ZONE: Final = "clean_zone"
 
 # --- Specifica MIoT del D10 Plus (urn:miot-spec-v2:device:vacuum:0000A006:dreame-r2205:2)
 # Ogni proprietà è (siid, piid).
@@ -126,6 +127,7 @@ A_EMPTY_BIN: Final = (15, 1)
 PIID_WORK_MODE: Final = 1
 PIID_EXTEND_DATA: Final = 10
 WORK_MODE_ROOMS: Final = 18
+WORK_MODE_ZONE: Final = 19
 
 # Stato (siid 2 piid 1)
 STATUS_SWEEPING: Final = 1

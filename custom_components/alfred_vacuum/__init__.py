@@ -30,6 +30,7 @@ from .const import (
     MOP_LEVELS,
     SERVICE_CLEAN_OVERDUE,
     SERVICE_CLEAN_ROOMS,
+    SERVICE_CLEAN_ZONE,
     SERVICE_REFRESH_MAP,
     SERVICE_SEND_COMMAND,
 )
@@ -147,6 +148,41 @@ CLEAN_ROOMS_SCHEMA = vol.Schema(
     }
 )
 
+def _zones(value: Any) -> list[list[float]]:
+    """Accetta [[x1,y1,x2,y2], ...] oppure una sola zona [x1,y1,x2,y2] (anche come testo JSON)."""
+    if isinstance(value, str):
+        import json
+
+        try:
+            value = json.loads(value)
+        except ValueError as err:
+            raise vol.Invalid("zone non leggibili") from err
+    value = cv.ensure_list(value)
+    if value and not isinstance(value[0], (list, tuple)):
+        value = [value]
+    zones = []
+    for zone in value:
+        try:
+            numbers = [float(v) for v in zone]
+        except (TypeError, ValueError) as err:
+            raise vol.Invalid(f"zona non valida: {zone}") from err
+        if len(numbers) < 4:
+            raise vol.Invalid("una zona è [x1, y1, x2, y2]")
+        zones.append(numbers[:4])
+    return zones
+
+
+CLEAN_ZONE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entity_id"): cv.entity_ids,
+        vol.Required("zones"): _zones,
+        vol.Optional("repeats", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=3)),
+        vol.Optional("fan_speed"): vol.In(["Silenziosa", "Standard", "Forte", "Turbo"]),
+        vol.Optional("water"): vol.In(["Bassa", "Media", "Alta"]),
+        vol.Optional("source"): cv.string,
+    }
+)
+
 CLEAN_OVERDUE_SCHEMA = vol.Schema(
     {vol.Optional("entity_id"): cv.entity_ids, vol.Optional("dry_run", default=False): cv.boolean}
 )
@@ -186,6 +222,20 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             raise HomeAssistantError(str(err)) from err
         return {"stanze": names}
 
+    async def clean_zone(call: ServiceCall) -> None:
+        coordinator = _coordinator_for(hass, call)
+        zones = call.data["zones"]
+        try:
+            await coordinator.async_clean_zones(
+                zones,
+                source=call.data.get("source", "zona sulla mappa"),
+                repeats=call.data["repeats"],
+                fan=fan_ids.get(call.data.get("fan_speed")),
+                water=mop_ids.get(call.data.get("water")),
+            )
+        except RobotError as err:
+            raise HomeAssistantError(str(err)) from err
+
     async def clean_overdue(call: ServiceCall) -> ServiceResponse:
         data = _data_for(hass, call)
         if call.data.get("dry_run"):
@@ -220,6 +270,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.services.async_register(
         DOMAIN, SERVICE_CLEAN_ROOMS, clean_rooms, schema=CLEAN_ROOMS_SCHEMA, supports_response=SupportsResponse.OPTIONAL
     )
+    hass.services.async_register(DOMAIN, SERVICE_CLEAN_ZONE, clean_zone, schema=CLEAN_ZONE_SCHEMA)
     hass.services.async_register(
         DOMAIN, SERVICE_CLEAN_OVERDUE, clean_overdue, schema=CLEAN_OVERDUE_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,

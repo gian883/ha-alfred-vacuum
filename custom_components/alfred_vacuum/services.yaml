@@ -78,3 +78,33 @@ clean_overdue:
       default: false
       selector:
         boolean:
+
+clean_zone:
+  fields:
+    entity_id:
+      selector:
+        entity:
+          integration: alfred_vacuum
+          domain: vacuum
+    zones:
+      required: true
+      example: "[[1000, 2000, 3000, 4000]]"
+      selector:
+        object:
+    repeats:
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+    fan_speed:
+      selector:
+        select:
+          options: ["Silenziosa", "Standard", "Forte", "Turbo"]
+    water:
+      selector:
+        select:
+          options: ["Bassa", "Media", "Alta"]
+    source:
+      selector:
+        text:

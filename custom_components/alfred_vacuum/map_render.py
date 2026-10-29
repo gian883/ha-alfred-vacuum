@@ -97,6 +97,61 @@ def room_boxes(data: MapData) -> dict[int, dict[str, Any]]:
     return boxes
 
 
+def room_outlines(data: MapData) -> dict[int, list[list[int]]]:
+    """Contorno di ogni stanza (poligono che segue i bordi delle celle), in coordinate del robot.
+
+    Per ogni cella della stanza si prendono i lati che confinano con l'esterno,
+    orientati in senso orario; concatenandoli si ottengono anelli chiusi e si
+    tiene il più lungo (il perimetro esterno). I punti allineati vengono tolti.
+    """
+    w = data.width
+    cells: dict[int, set[tuple[int, int]]] = {}
+    for index, value in enumerate(data.pixels):
+        room = value & 0x3F
+        if room in data.rooms:
+            cells.setdefault(room, set()).add((index % w, index // w))
+    result: dict[int, list[list[int]]] = {}
+    for room, cs in cells.items():
+        edges: dict[tuple[int, int], list[tuple[int, int]]] = {}
+
+        def add(a: tuple[int, int], b: tuple[int, int], edges=edges) -> None:
+            edges.setdefault(a, []).append(b)
+
+        for c, r in cs:
+            if (c, r - 1) not in cs:
+                add((c, r), (c + 1, r))
+            if (c + 1, r) not in cs:
+                add((c + 1, r), (c + 1, r + 1))
+            if (c, r + 1) not in cs:
+                add((c + 1, r + 1), (c, r + 1))
+            if (c - 1, r) not in cs:
+                add((c, r + 1), (c, r))
+        best: list[tuple[int, int]] = []
+        while edges:
+            start = next(iter(edges))
+            loop = [start]
+            point = start
+            while True:
+                nxt = edges[point].pop()
+                if not edges[point]:
+                    del edges[point]
+                if nxt == start or nxt not in edges:
+                    break
+                loop.append(nxt)
+                point = nxt
+            if len(loop) > len(best):
+                best = loop
+        # tolgo i punti in mezzo a un tratto rettilineo
+        simple: list[tuple[int, int]] = []
+        n = len(best)
+        for i, p in enumerate(best):
+            prev, nxt = best[i - 1], best[(i + 1) % n]
+            if (p[0] - prev[0]) * (nxt[1] - p[1]) != (p[1] - prev[1]) * (nxt[0] - p[0]):
+                simple.append(p)
+        result[room] = [[data.left + c * data.grid, data.top + r * data.grid] for c, r in simple]
+    return result
+
+
 def _font(size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
     try:
         return ImageFont.load_default(size=size)
@@ -152,6 +207,7 @@ def render(data: MapData, rooms: dict[int, Room], highlight: set[int] | None = N
 
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
+    outlines = room_outlines(data)
 
     attributes = {
         "calibration_points": geo.calibration_points(),
@@ -163,7 +219,8 @@ def render(data: MapData, rooms: dict[int, Room], highlight: set[int] | None = N
                 "name": rooms[room_id].name if room_id in rooms else f"Stanza {room_id}",
                 "x0": box["x0"], "y0": box["y0"], "x1": box["x1"], "y1": box["y1"],
                 "x": box["x"], "y": box["y"],
-                "outline": [[box["x0"], box["y0"]], [box["x1"], box["y0"]], [box["x1"], box["y1"]], [box["x0"], box["y1"]]],
+                "outline": outlines.get(room_id)
+                or [[box["x0"], box["y0"]], [box["x1"], box["y0"]], [box["x1"], box["y1"]], [box["x0"], box["y1"]]],
             }
             for room_id, box in boxes.items()
         },

@@ -247,3 +247,34 @@ async def test_options_flow_sections(hass: HomeAssistant, robot, tmp_path) -> No
         },
     )
     assert entry.options["away_rooms"] == ["Cucina"] and entry.options["smart_days"] == 3
+
+
+def test_room_outlines_follow_cells():
+    from custom_components.alfred_vacuum.map_render import room_outlines
+
+    # stanza 1 a forma di L in una griglia 3x3 (celle da 50 mm)
+    pixels = bytes([1, 0, 0,
+                    1, 0, 0,
+                    1, 1, 1])
+    head = HEADER.pack(1, 1, ord("I"), 0, 0, 0, 0, 0, 0, 50, 3, 3, 0, 0)
+    raw = head + pixels + json.dumps({"seg_inf": {"1": {"type": 4}}}).encode()
+    data = decode(base64.b64encode(zlib.compress(raw)).decode())
+    outline = room_outlines(data)[1]
+    assert len(outline) == 6  # una L ha 6 vertici
+    assert {tuple(p) for p in outline} == {(0, 0), (50, 0), (50, 100), (150, 100), (150, 150), (0, 150)}
+
+
+async def test_clean_zone_service(hass: HomeAssistant, robot, tmp_path) -> None:
+    await setup(hass, tmp_path)
+    await hass.services.async_call(
+        DOMAIN, "clean_zone", {"zones": [[300, 400, 100, 200]], "repeats": 2}, blocking=True
+    )
+    act, ins = robot.actions[-1]
+    assert act == (4, 7)
+    assert json.loads(ins[0]["value"]) == {"areas": [[100, 200, 300, 400, 2, 1, 1]]}
+    assert ins[1] == {"piid": 1, "value": 19}
+    # una sola zona come lista piatta (formato della card) e come testo
+    await hass.services.async_call(DOMAIN, "clean_zone", {"zones": [10, 20, 30, 40]}, blocking=True)
+    assert json.loads(robot.actions[-1][1][0]["value"])["areas"][0][:4] == [10, 20, 30, 40]
+    await hass.services.async_call(DOMAIN, "clean_zone", {"zones": "[[1,2,3,4]]"}, blocking=True)
+    assert json.loads(robot.actions[-1][1][0]["value"])["areas"][0][:4] == [1, 2, 3, 4]
