@@ -101,6 +101,7 @@ target:
 
 ## Versioni
 
+- **0.3.2** – mappa: riconosce il formato dei pixel della mappa in uso (stanza × 4), quindi nomi giusti su tutte le stanze (prima la Cucina appariva come "Bagno" e le altre senza nome); durante la pulizia le stanze scelte sono evidenziate con il contorno arancione e le zone disegnate sulla mappa; nomi più grandi.
 - **0.3.1** – errori di rete del cloud (DNS, SSL, timeout) gestiti come errori del cloud; un guasto breve non rende più indisponibile il robot.
 - **0.3.0** – pulizia a zona e contorni reali delle stanze.
 

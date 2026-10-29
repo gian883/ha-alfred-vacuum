@@ -8,7 +8,10 @@ Una volta decompressa è fatta così (little-endian):
     robot   x, y, angolo  (3 x int16)
     base    x, y, angolo  (3 x int16)
     dimensione cella int16 | larghezza int16 | altezza int16 | sinistra int16 | alto int16
-  pixel     larghezza x altezza byte (6 bit bassi = numero stanza)
+  pixel     larghezza x altezza byte, in due formati (riconosciuti da soli):
+            - mappa salvata: 6 bit bassi = numero stanza, bit alto (0x80) = bordo
+            - mappa in uso (D10 Plus, frame 'I'): numero stanza x 4 (valore >> 2),
+              2 bit bassi = dettagli, 252 (63 x 4) = muro
   JSON      resto del file: 'seg_inf' contiene le stanze, 'rism' la mappa salvata
 """
 
@@ -19,6 +22,7 @@ import json
 import logging
 import struct
 import zlib
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -55,6 +59,28 @@ class MapData:
     pixels: bytes
     info: dict[str, Any]
     rooms: dict[int, Room] = field(default_factory=dict)
+    room_shift: int = 0  # 0 = valore & 0x3F, 2 = valore >> 2
+
+    def room_of(self, value: int) -> int | None:
+        """Numero della stanza codificato nel pixel (None se non è una stanza nota)."""
+        if not value:
+            return None
+        room = value >> 2 if self.room_shift else value & 0x3F
+        return room if room in self.rooms else None
+
+    def is_wall(self, value: int) -> bool:
+        if self.room_shift:
+            return value >> 2 == 63
+        return bool(value & 0x80) or value & 0x3F == 63
+
+    def detect_format(self) -> None:
+        """Sceglie il formato dei pixel che fa combaciare più celle con le stanze note."""
+        if not self.rooms or not self.pixels:
+            return
+        counts = Counter(self.pixels)
+        plain = sum(n for v, n in counts.items() if v and v & 0x3F in self.rooms)
+        shifted = sum(n for v, n in counts.items() if v and v >> 2 in self.rooms)
+        self.room_shift = 2 if shifted > plain else 0
 
     def room_at(self, x: int, y: int) -> int | None:
         """Numero della stanza che contiene il punto (in mm)."""
@@ -64,8 +90,7 @@ class MapData:
         row = (y - self.top) // self.grid
         if not (0 <= col < self.width and 0 <= row < self.height):
             return None
-        room = self.pixels[row * self.width + col] & 0x3F
-        return room if room in self.rooms else None
+        return self.room_of(self.pixels[row * self.width + col])
 
     @property
     def robot_room(self) -> int | None:
@@ -170,6 +195,7 @@ def decode_raw(raw: bytes) -> MapData:
                 data.left, data.top, data.grid = saved.left, saved.top, saved.grid
         except MapDecodeError as err:
             _LOGGER.debug("Mappa salvata non leggibile: %s", err)
+    data.detect_format()
     return data
 
 
@@ -200,6 +226,9 @@ def describe(data: MapData) -> dict[str, Any]:
         "grid_mm": data.grid,
         "robot": list(data.robot),
         "robot_room": data.robot_room,
+        "pixel_format": "stanza x 4" if data.room_shift else "stanza & 0x3F",
         "rooms": {r.room_id: {"name": r.name, "type": r.room_type, "custom": r.custom_name} for r in data.rooms.values()},
         "json_keys": sorted(data.info.keys()),
+        # valori brevi del JSON (per capire campi come 'sa' o 'cs' senza scaricare la mappa)
+        "info_small": {k: v for k, v in data.info.items() if len(json.dumps(v)) <= 300},
     }

@@ -278,3 +278,37 @@ async def test_clean_zone_service(hass: HomeAssistant, robot, tmp_path) -> None:
     assert json.loads(robot.actions[-1][1][0]["value"])["areas"][0][:4] == [10, 20, 30, 40]
     await hass.services.async_call(DOMAIN, "clean_zone", {"zones": "[[1,2,3,4]]"}, blocking=True)
     assert json.loads(robot.actions[-1][1][0]["value"])["areas"][0][:4] == [1, 2, 3, 4]
+
+
+def test_render_highlight_and_zones():
+    """Stanze in pulizia evidenziate, le altre sbiadite; zone disegnate; nomi di tutte le stanze."""
+    import io
+
+    from PIL import Image
+
+    pixels = bytes([4] * 20 + [8] * 20) * 20  # 40x20 celle: metà stanza 1, metà stanza 2 (formato x4)
+    head = HEADER.pack(1, 1, ord("I"), 0, 0, 0, 0, 0, 0, 50, 40, 20, 0, 0)
+    seg = {"1": {"type": 4}, "2": {"type": 1}}
+    data = decode_raw_bytes(head + pixels + json.dumps({"seg_inf": seg}).encode())
+    assert data.room_shift == 2
+
+    png, attrs = render(data, data.rooms, highlight={1})
+    assert set(attrs["rooms"]) == {"1", "2"}
+    assert attrs["rooms"]["1"]["name"] == "Cucina" and attrs["rooms"]["2"]["name"] == "Soggiorno"
+    img = Image.open(io.BytesIO(png)).convert("RGBA")
+    geo = MapGeometry(data)
+    k = img.getpixel(tuple(int(v) for v in geo.to_image(200, 100)))
+    s = img.getpixel(tuple(int(v) for v in geo.to_image(1800, 100)))
+    assert k[3] == 255 and s[3] < 255  # cucina piena, soggiorno sbiadito
+
+    png, _ = render(data, data.rooms, zones=[[1100, 300, 1600, 800]])
+    img = Image.open(io.BytesIO(png)).convert("RGBA")
+    inside = img.getpixel(tuple(int(v) for v in geo.to_image(1350, 550)))
+    outside = img.getpixel(tuple(int(v) for v in geo.to_image(200, 100)))
+    assert inside[0] > 200 and inside != outside  # riempimento arancione della zona
+
+
+def decode_raw_bytes(raw: bytes):
+    from custom_components.alfred_vacuum.map_decoder import decode_raw
+
+    return decode_raw(raw)

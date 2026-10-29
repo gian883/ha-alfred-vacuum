@@ -31,6 +31,8 @@ ROBOT = (255, 255, 255, 255)
 ROBOT_EDGE = (30, 30, 30, 255)
 TEXT = (20, 20, 20, 255)
 TEXT_EDGE = (255, 255, 255, 230)
+HIGHLIGHT = (255, 140, 0, 255)
+ZONE_FILL = (255, 140, 0, 90)
 ROOM_COLORS = [
     (125, 179, 232), (247, 178, 103), (140, 205, 140), (230, 140, 160),
     (190, 160, 230), (240, 214, 110), (120, 200, 200), (210, 170, 140),
@@ -73,8 +75,8 @@ def room_boxes(data: MapData) -> dict[int, dict[str, Any]]:
     cells: dict[int, list[tuple[int, int]]] = {}
     w = data.width
     for index, value in enumerate(data.pixels):
-        room = value & 0x3F
-        if room in data.rooms:
+        room = data.room_of(value)
+        if room is not None:
             cells.setdefault(room, []).append((index % w, index // w))
     boxes: dict[int, dict[str, Any]] = {}
     for room, pts in cells.items():
@@ -107,8 +109,8 @@ def room_outlines(data: MapData) -> dict[int, list[list[int]]]:
     w = data.width
     cells: dict[int, set[tuple[int, int]]] = {}
     for index, value in enumerate(data.pixels):
-        room = value & 0x3F
-        if room in data.rooms:
+        room = data.room_of(value)
+        if room is not None:
             cells.setdefault(room, set()).add((index % w, index // w))
     result: dict[int, list[list[int]]] = {}
     for room, cs in cells.items():
@@ -159,31 +161,62 @@ def _font(size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
         return ImageFont.load_default()
 
 
-def render(data: MapData, rooms: dict[int, Room], highlight: set[int] | None = None) -> tuple[bytes, dict[str, Any]]:
-    """Restituisce (PNG, attributi per la card)."""
+def render(
+    data: MapData,
+    rooms: dict[int, Room],
+    highlight: set[int] | None = None,
+    zones: list[list[float]] | None = None,
+) -> tuple[bytes, dict[str, Any]]:
+    """Restituisce (PNG, attributi per la card).
+
+    highlight: stanze in pulizia (le altre vengono sbiadite).
+    zones: rettangoli in pulizia [x1, y1, x2, y2, ...] in coordinate del robot.
+    """
     geo = MapGeometry(data)
     colors = {room_id: ROOM_COLORS[i % len(ROOM_COLORS)] for i, room_id in enumerate(sorted(data.rooms))}
+    dim = bool(highlight) or bool(zones)
+    # colore per ogni valore di pixel (calcolato una volta sola: i valori diversi sono pochi)
+    lookup: dict[int, tuple[int, int, int, int]] = {}
+    for value in set(data.pixels):
+        if not value:
+            continue
+        room = data.room_of(value)
+        if data.is_wall(value):
+            lookup[value] = WALL
+        elif room in colors:
+            r, g, b = colors[room]
+            alpha = 255 if not dim or (highlight and room in highlight) else 90
+            lookup[value] = (r, g, b, alpha)
+        else:
+            lookup[value] = FLOOR
     small = Image.new("RGBA", (data.width, data.height), BACKGROUND)
     px = small.load()
     for index, value in enumerate(data.pixels):
-        if not value:
-            continue
-        room = value & 0x3F
-        col, row = index % data.width, index // data.width
-        y = data.height - 1 - row
-        if value & 0x80:
-            # bit alto = bordo/muro della stanza (verificato sul D10 Plus: valori 129-134)
-            px[col, y] = WALL
-        elif room in colors:
-            r, g, b = colors[room]
-            alpha = 255 if not highlight or room in highlight else 110
-            px[col, y] = (r, g, b, alpha)
-        elif room == WALL_VALUE:
-            px[col, y] = WALL
-        else:
-            px[col, y] = FLOOR
+        if value:
+            px[index % data.width, data.height - 1 - index // data.width] = lookup[value]
     image = small.resize((geo.width, geo.height), Image.NEAREST)
     draw = ImageDraw.Draw(image)
+
+    # contorno delle stanze in pulizia
+    outlines = room_outlines(data)
+    for room_id in sorted(highlight or ()):
+        points = [geo.to_image(x, y) for x, y in outlines.get(room_id) or []]
+        if len(points) > 2:
+            draw.line([*points, points[0]], fill=HIGHLIGHT, width=4, joint="curve")
+
+    # zone in pulizia
+    if zones:
+        layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        zdraw = ImageDraw.Draw(layer)
+        for zone in zones:
+            if len(zone) < 4:
+                continue
+            x1, y1 = geo.to_image(zone[0], zone[1])
+            x2, y2 = geo.to_image(zone[2], zone[3])
+            box = (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+            zdraw.rectangle(box, fill=ZONE_FILL, outline=HIGHLIGHT, width=4)
+        image = Image.alpha_composite(image, layer)
+        draw = ImageDraw.Draw(image)
 
     # base di ricarica
     cx, cy = geo.to_image(data.charger[0], data.charger[1])
@@ -197,17 +230,20 @@ def render(data: MapData, rooms: dict[int, Room], highlight: set[int] | None = N
 
     # nomi delle stanze
     boxes = room_boxes(data)
-    font = _font(15)
+    # testo proporzionato all'immagine (in dashboard viene rimpicciolita ~3 volte);
+    # un po' sotto il centro, dove la card disegna l'icona della stanza
+    size = max(16, round(geo.width / 42))
+    font = _font(size)
     for room_id, box in boxes.items():
         room = rooms.get(room_id)
         if not room:
             continue
         tx, ty = geo.to_image(box["x"], box["y"])
-        draw.text((tx, ty), room.name, fill=TEXT, font=font, anchor="mm", stroke_width=2, stroke_fill=TEXT_EDGE)
+        ty = min(ty + size * 1.6, geo.height - size)
+        draw.text((tx, ty), room.name, fill=TEXT, font=font, anchor="mm", stroke_width=3, stroke_fill=TEXT_EDGE)
 
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
-    outlines = room_outlines(data)
 
     attributes = {
         "calibration_points": geo.calibration_points(),

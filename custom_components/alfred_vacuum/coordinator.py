@@ -84,6 +84,7 @@ class CleaningSession:
     source: str
     requested: list[str] | None  # nomi richiesti (None = tutta la casa o sconosciuto)
     full: bool = False
+    zones: list[list[float]] | None = None  # rettangoli della pulizia a zona
     visited: Counter = field(default_factory=Counter)
     max_area: int = 0
     max_time: int = 0
@@ -113,7 +114,8 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         self.selected_room: str | None = None
         self.session: CleaningSession | None = None
         self.flags: dict[str, bool] = {}  # interruttori delle automazioni
-        self._pending: tuple[str, list[str] | None, bool] | None = None
+        self._pending: tuple[str, list[str] | None, bool, list[list[float]] | None] | None = None
+        self._force_map = False
         self._last_status: Any = None
         self._map_attempts = 0
         self._map_busy = False
@@ -186,9 +188,10 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         names = [self.room_name(i) for i in ids]
         await self.robot.clean_rooms(ids, self.data or {}, repeats=repeats, fan=fan, water=water)
         if self.session:  # nuova richiesta durante una pulizia: aggiorno la sessione in corso
-            self.session.requested, self.session.source = names, source
+            self.session.requested, self.session.source, self.session.zones = names, source, None
+            self._force_map = True
         else:
-            self._pending = (source, names, False)
+            self._pending = (source, names, False, None)
         await self.async_request_refresh()
         return names
 
@@ -198,20 +201,24 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
     ) -> None:
         """Pulisce dei rettangoli disegnati sulla mappa (coordinate del robot)."""
         await self.robot.clean_zones(zones, self.data or {}, repeats=repeats, fan=fan, water=water)
-        if self.session is None:
-            self._pending = (source, None, False)
+        zones = [[float(v) for v in zone[:4]] for zone in zones]
+        if self.session:
+            self.session.requested, self.session.zones, self.session.source = None, zones, source
+            self._force_map = True
+        else:
+            self._pending = (source, None, False, zones)
         await self.async_request_refresh()
 
     async def async_clean_all(self, source: str = "manuale") -> None:
         await self.robot.action(A_START)
         if self.session is None:  # se era in pausa riprende la sessione esistente
-            self._pending = (source, None, True)
+            self._pending = (source, None, True, None)
         await self.async_request_refresh()
 
     def note_external_start(self, source: str, full: bool) -> None:
         """Avvio fatto da un'entità (es. pulsante Avvia): serve per lo storico."""
         if self.session is None:
-            self._pending = (source, None, full)
+            self._pending = (source, None, full, None)
 
     # --- mappa -----------------------------------------------------------
     async def async_refresh_map(self) -> dict[str, Any]:
@@ -244,12 +251,15 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
     async def _render(self) -> None:
         if not self.map:
             return
-        highlight = None
-        if self.session and self.session.requested:
-            highlight = {self.resolve_room(n) for n in self.session.requested if n in self.room_names}
+        highlight: set[int] | None = None
+        zones: list[list[float]] | None = None
+        if self.session:
+            if self.session.requested:
+                highlight = {self.resolve_room(n) for n in self.session.requested if n in self.room_names}
+            zones = self.session.zones
         try:
             self.map_image, self.map_attributes = await self.hass.async_add_executor_job(
-                render, self.map, self.rooms, highlight
+                render, self.map, self.rooms, highlight, zones
             )
         except Exception:  # noqa: BLE001 - un errore di disegno non deve fermare il resto
             _LOGGER.exception("Disegno della mappa non riuscito")
@@ -297,9 +307,10 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
 
         # inizio sessione
         if status in CLEANING_STATUSES and self.session is None:
-            source, names, full = self._pending or ("esterno", None, False)
-            self.session = CleaningSession(started=now, source=source, requested=names, full=full)
+            source, names, full, zones = self._pending or ("esterno", None, False, None)
+            self.session = CleaningSession(started=now, source=source, requested=names, full=full, zones=zones)
             self._pending = None
+            self._force_map = True  # subito la mappa con le stanze/zone evidenziate
         if self.session:
             self.session.max_area = max(self.session.max_area, int(data.get(P_CLEANING_AREA) or 0))
             self.session.max_time = max(self.session.max_time, int(data.get(P_CLEANING_TIME) or 0))
@@ -310,7 +321,9 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         elif not self._map_busy:
             if self.session and status in CLEANING_STATUSES:
                 live = self.entry.options.get(CONF_LIVE_MAP_INTERVAL, DEFAULT_LIVE_MAP_INTERVAL)
-                if live and (self.map_updated is None or now - self.map_updated >= timedelta(seconds=live)):
+                due = live and (self.map_updated is None or now - self.map_updated >= timedelta(seconds=live))
+                if due or self._force_map:
+                    self._force_map = False
                     self.hass.async_create_task(self._background_map())
             else:
                 interval = timedelta(minutes=self.entry.options.get(CONF_MAP_INTERVAL, DEFAULT_MAP_INTERVAL))

@@ -153,3 +153,19 @@ def test_rc4_matches_reference():
     stream = enc.update(b"\x00" * 1024 + data)
     assert _rc4(key, data) == stream[1024:]
     assert _rc4(key, _rc4(key, data)) == data
+
+
+def test_map_shifted_pixels():
+    """Mappa in uso del D10 Plus: pixel = stanza x 4 (verificato il 2026-10-29), 252 = muro."""
+    pixels = bytes([4, 4, 16, 16, 4, 252, 16, 17])  # stanza 1, stanza 4, muro, stanza 4 con dettaglio
+    data = decode(_make_map({"1": {"type": 4}, "4": {"type": 6}}, robot_xy=(25, 25), pixels=pixels))
+    assert data.room_shift == 2
+    assert data.robot_room == 1  # colonna 0 -> pixel 4 -> stanza 1 (Cucina), non la 4 (Bagno)
+    assert data.room_of(16) == 4 and data.room_of(17) == 4
+    assert data.is_wall(252) and data.room_of(252) is None
+
+
+def test_map_plain_pixels_unchanged():
+    data = decode(_make_map({"1": {"type": 1}, "4": {"type": 4}}))
+    assert data.room_shift == 0
+    assert data.room_of(4 | 0x80) == 4 and data.is_wall(4 | 0x80)
