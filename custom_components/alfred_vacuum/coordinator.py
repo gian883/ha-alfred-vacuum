@@ -43,6 +43,11 @@ from .map_render import pixel_histogram, render
 
 _LOGGER = logging.getLogger(__name__)
 
+# Aggiornamenti falliti di fila tollerati prima di rendere le entità non disponibili.
+# Con l'intervallo predefinito (15 s) sono circa 1 minuto e mezzo: un singhiozzo del
+# Wi‑Fi o del cloud Xiaomi non fa sparire il robot da automazioni e Node-RED.
+MAX_MISSED_UPDATES = 6
+
 CLEANING_STATUSES = {1, 7, 12}
 HOME_STATUSES = {2, 6, 13}  # in attesa, in carica, carica completata
 DOCKED_STATUSES = {6, 13}
@@ -112,6 +117,7 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         self._last_status: Any = None
         self._map_attempts = 0
         self._map_busy = False
+        self._missed_updates = 0
 
     async def async_setup(self) -> None:
         await self.history.async_load()
@@ -274,9 +280,15 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         try:
             data = await self.robot.get_properties()
         except CloudAuthError as err:
+            # se il robot risponde in locale, una sessione cloud scaduta non lo blocca:
+            # qui arriva solo quando anche il locale è fallito
             raise ConfigEntryAuthFailed("Sessione Xiaomi scaduta, rifai il login") from err
-        except (RobotError, CloudError) as err:
-            raise UpdateFailed(str(err)) from err
+        except Exception as err:  # noqa: BLE001 - qualsiasi errore di rete passa dalla tolleranza
+            return self._tolerate_failure(err)
+
+        if self._missed_updates:
+            _LOGGER.info("Robot di nuovo raggiungibile dopo %s aggiornamenti falliti", self._missed_updates)
+            self._missed_updates = 0
 
         status = data.get(P_STATUS)
         previous = self._last_status
@@ -306,6 +318,19 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
                 if stale and self._map_attempt_due():
                     self.hass.async_create_task(self._background_map())
         return data
+
+    def _tolerate_failure(self, err: Exception) -> dict[tuple[int, int], Any]:
+        """Tiene gli ultimi valori per qualche aggiornamento prima di arrendersi."""
+        self._missed_updates += 1
+        reason = str(err) or type(err).__name__
+        if not isinstance(err, (RobotError, CloudError)):
+            _LOGGER.debug("Errore inatteso leggendo lo stato del robot", exc_info=err)
+        if self.data is None or self._missed_updates >= MAX_MISSED_UPDATES:
+            # primo avvio senza dati, oppure guasto che dura: entità non disponibili
+            raise UpdateFailed(f"Robot non raggiungibile ({self._missed_updates} tentativi): {reason}") from err
+        if self._missed_updates == 1:
+            _LOGGER.warning("Lettura dello stato non riuscita, tengo gli ultimi valori: %s", reason)
+        return self.data
 
     def _map_attempt_due(self) -> bool:
         """Senza errori legge subito; dopo un errore ritenta ogni 40 aggiornamenti."""

@@ -97,6 +97,13 @@ target:
 | `coordinator.py` | aggiornamento periodico, stanze, ricerca per nome |
 | `const.py` | proprietà e azioni MIoT del D10 Plus |
 
+**Robustezza**: lo stato si legge in locale; il cloud serve solo come riserva e per la mappa. Se robot e cloud non rispondono, le entità tengono gli ultimi valori per 6 aggiornamenti (circa 1 minuto e mezzo) prima di diventare "non disponibili", così un singhiozzo del Wi‑Fi o del DNS non blocca automazioni e Node-RED.
+
+## Versioni
+
+- **0.3.1** – errori di rete del cloud (DNS, SSL, timeout) gestiti come errori del cloud; un guasto breve non rende più indisponibile il robot.
+- **0.3.0** – pulizia a zona e contorni reali delle stanze.
+
 Fonti pubbliche usate: specifica MIoT `urn:miot-spec-v2:device:vacuum:0000A006:dreame-r2205:2` (miot-spec.org) e la documentazione pubblica dei protocolli miio e cloud Xiaomi.
 
 ## Licenza

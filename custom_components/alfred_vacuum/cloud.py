@@ -369,9 +369,13 @@ class XiaomiCloud:
             "channel": "MI_APP_STORE",
         }
         http = self._client()
-        async with http.post(url, params=encrypted, headers=headers, cookies=cookies) as resp:
-            body = await resp.text()
-            status = resp.status
+        try:
+            async with http.post(url, params=encrypted, headers=headers, cookies=cookies) as resp:
+                body = await resp.text()
+                status = resp.status
+        except (aiohttp.ClientError, TimeoutError) as err:
+            # DNS, SSL, rete assente: errore del cloud, non deve uscire "grezzo"
+            raise CloudError(f"Cloud Xiaomi non raggiungibile: {err or type(err).__name__}") from err
         if status in (401, 403):
             raise CloudAuthError("Sessione cloud scaduta")
         if status != 200:
@@ -380,7 +384,12 @@ class XiaomiCloud:
             plain = _rc4(key, base64.b64decode(body)).decode()
         except (ValueError, UnicodeDecodeError):
             plain = body  # alcune risposte di errore non sono cifrate
-        data = json.loads(plain)
+        try:
+            data = json.loads(plain)
+        except ValueError as err:
+            raise CloudError(f"Risposta non leggibile da {path}") from err
+        if not isinstance(data, dict):
+            raise CloudError(f"Risposta inattesa da {path}")
         code = data.get("code", 0)
         if code in (2, 3) or "auth err" in str(data.get("message", "")).lower():
             raise CloudAuthError("Sessione cloud scaduta")
@@ -462,10 +471,13 @@ class XiaomiCloud:
         return None
 
     async def download(self, url: str) -> bytes:
-        async with self._client().get(url) as resp:
-            if resp.status != 200:
-                raise CloudError(f"Download mappa: HTTP {resp.status}")
-            return await resp.read()
+        try:
+            async with self._client().get(url) as resp:
+                if resp.status != 200:
+                    raise CloudError(f"Download mappa: HTTP {resp.status}")
+                return await resp.read()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise CloudError(f"Download mappa non riuscito: {err or type(err).__name__}") from err
 
 
 def signature_path(url: str) -> str:
