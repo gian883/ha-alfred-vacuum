@@ -1,11 +1,15 @@
-"""Aggiornamento periodico dello stato e delle stanze."""
+"""Aggiornamento dello stato, stanze, mappa e sessioni di pulizia."""
 
 from __future__ import annotations
 
 import logging
+from collections import Counter
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -14,38 +18,74 @@ from homeassistant.util import dt as dt_util
 
 from .cloud import CloudAuthError, CloudError
 from .const import (
+    A_START,
+    CONF_LIVE_MAP_INTERVAL,
     CONF_MAP_INTERVAL,
     CONF_ROOM_NAMES,
     CONF_SCAN_INTERVAL,
+    DEFAULT_LIVE_MAP_INTERVAL,
     DEFAULT_MAP_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    EVENT_CLEANING_FINISHED,
+    EVENT_ROOMS_CHANGED,
+    LAST_CLEAN_IMAGE,
+    MEDIA_SUBDIR,
+    P_BATTERY,
+    P_CLEANING_AREA,
+    P_CLEANING_TIME,
     P_STATUS,
-    STATUS_CHARGED,
-    STATUS_CHARGING,
 )
 from .device import AlfredRobot, RobotError
+from .history import RoomHistory
 from .map_decoder import MapData, Room, describe
+from .map_render import pixel_histogram, render
 
 _LOGGER = logging.getLogger(__name__)
 
+CLEANING_STATUSES = {1, 7, 12}
+HOME_STATUSES = {2, 6, 13}  # in attesa, in carica, carica completata
+DOCKED_STATUSES = {6, 13}
 
-def parse_room_overrides(text: str | None) -> dict[int, str]:
-    """'1=Soggiorno, 4=Cucina' -> {1: 'Soggiorno', 4: 'Cucina'}."""
-    result: dict[int, str] = {}
+
+def parse_room_overrides(text: str | None) -> dict[int | str, str]:
+    """'1=Soggiorno, Camera da letto 2=Cameretta' -> {1: 'Soggiorno', 'camera da letto 2': 'Cameretta'}.
+
+    La chiave può essere il numero (cambia se rifai la mappatura) oppure il
+    nome letto dalla mappa (resta valido anche dopo una nuova mappatura).
+    """
+    result: dict[int | str, str] = {}
     for part in (text or "").replace("\n", ",").split(","):
         if "=" not in part:
             continue
         key, _, name = part.partition("=")
-        try:
-            result[int(key.strip())] = name.strip()
-        except ValueError:
+        key, name = key.strip(), name.strip()
+        if not key or not name:
             continue
-    return {k: v for k, v in result.items() if v}
+        result[int(key) if key.isdigit() else key.casefold()] = name
+    return result
+
+
+def parse_names(value: str | list[str] | None) -> list[str]:
+    """Nomi da un elenco o da un testo separato da virgole."""
+    if isinstance(value, list):
+        return [str(n).strip() for n in value if str(n).strip()]
+    return [n.strip() for n in (value or "").replace("\n", ",").split(",") if n.strip()]
+
+
+@dataclass
+class CleaningSession:
+    started: datetime
+    source: str
+    requested: list[str] | None  # nomi richiesti (None = tutta la casa o sconosciuto)
+    full: bool = False
+    visited: Counter = field(default_factory=Counter)
+    max_area: int = 0
+    max_time: int = 0
 
 
 class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
-    """Legge lo stato del robot e, ogni tanto, la mappa."""
+    """Legge lo stato del robot e, quando serve, la mappa."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, robot: AlfredRobot) -> None:
         interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -58,33 +98,55 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         )
         self.robot = robot
         self.entry = entry
+        self.history = RoomHistory(hass, entry.entry_id)
         self.map: MapData | None = None
         self.map_details: dict[str, Any] = {}
         self.map_updated: datetime | None = None
         self.map_error: str | None = None
-        self._last_status: Any = None
+        self.map_image: bytes | None = None
+        self.map_attributes: dict[str, Any] = {}
         self.selected_room: str | None = None
+        self.session: CleaningSession | None = None
+        self.flags: dict[str, bool] = {}  # interruttori delle automazioni
+        self._pending: tuple[str, list[str] | None, bool] | None = None
+        self._last_status: Any = None
+        self._map_attempts = 0
+        self._map_busy = False
+
+    async def async_setup(self) -> None:
+        await self.history.async_load()
+
+    @property
+    def last_session(self) -> dict[str, Any] | None:
+        return self.history.last_session
 
     # --- stanze ----------------------------------------------------------
     @property
-    def overrides(self) -> dict[int, str]:
+    def overrides(self) -> dict[int | str, str]:
         return parse_room_overrides(self.entry.options.get(CONF_ROOM_NAMES))
 
     @property
     def rooms(self) -> dict[int, Room]:
-        """Stanze lette dalla mappa, con eventuali nomi scelti nelle opzioni."""
+        """Stanze lette dalla mappa, con i nomi scelti nelle opzioni."""
         rooms: dict[int, Room] = {}
         if self.map:
             rooms = {k: Room(v.room_id, v.name, v.room_type, v.custom_name) for k, v in self.map.rooms.items()}
-        for room_id, name in self.overrides.items():
-            if room_id in rooms:
-                rooms[room_id].name = name
-            else:
-                rooms[room_id] = Room(room_id, name)
+        overrides = self.overrides
+        for room in rooms.values():
+            new = overrides.get(room.room_id) or overrides.get(room.name.casefold())
+            if new:
+                room.name = new
+        for key, name in overrides.items():
+            if isinstance(key, int) and key not in rooms and not self.map:
+                rooms[key] = Room(key, name)
         return dict(sorted(rooms.items()))
 
+    @property
+    def room_names(self) -> list[str]:
+        return [r.name for r in self.rooms.values()]
+
     def resolve_room(self, value: str | int) -> int:
-        """Accetta un numero o un nome ('cucina', 'Bagno') e restituisce il numero."""
+        """Accetta un nome ('cucina') o un numero e restituisce il numero ATTUALE."""
         text = str(value).strip()
         if text.isdigit():
             return int(text)
@@ -95,7 +157,11 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         for room in self.rooms.values():
             if wanted in room.name.casefold():
                 return room.room_id
-        raise ValueError(f"Stanza '{value}' non trovata. Stanze note: {', '.join(r.name for r in self.rooms.values()) or 'nessuna'}")
+        raise ValueError(f"Stanza '{value}' non trovata. Stanze note: {', '.join(self.room_names) or 'nessuna'}")
+
+    def room_name(self, room_id: int) -> str:
+        room = self.rooms.get(room_id)
+        return room.name if room else f"Stanza {room_id}"
 
     @property
     def current_room(self) -> Room | None:
@@ -104,6 +170,34 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         room_id = self.map.robot_room
         return self.rooms.get(room_id) if room_id is not None else None
 
+    # --- comandi che aprono una sessione ---------------------------------
+    async def async_clean_rooms(
+        self, rooms: list[str | int], source: str = "manuale", repeats: int = 1,
+        fan: int | None = None, water: int | None = None,
+    ) -> list[str]:
+        """Pulisce le stanze indicate per nome o numero. Restituisce i nomi."""
+        ids = [self.resolve_room(r) for r in rooms]
+        names = [self.room_name(i) for i in ids]
+        await self.robot.clean_rooms(ids, self.data or {}, repeats=repeats, fan=fan, water=water)
+        if self.session:  # nuova richiesta durante una pulizia: aggiorno la sessione in corso
+            self.session.requested, self.session.source = names, source
+        else:
+            self._pending = (source, names, False)
+        await self.async_request_refresh()
+        return names
+
+    async def async_clean_all(self, source: str = "manuale") -> None:
+        await self.robot.action(A_START)
+        if self.session is None:  # se era in pausa riprende la sessione esistente
+            self._pending = (source, None, True)
+        await self.async_request_refresh()
+
+    def note_external_start(self, source: str, full: bool) -> None:
+        """Avvio fatto da un'entità (es. pulsante Avvia): serve per lo storico."""
+        if self.session is None:
+            self._pending = (source, None, full)
+
+    # --- mappa -----------------------------------------------------------
     async def async_refresh_map(self) -> dict[str, Any]:
         """Rilegge la mappa dal robot. Restituisce un riassunto."""
         try:
@@ -113,16 +207,57 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
             self.map_details = {"error": str(err)}
             return self.map_details
         self.map_details = details
-        if data is not None:
-            self.map = data
-            self.map_updated = dt_util.utcnow()
-            self.map_error = None
-            details = {**details, **describe(data)}
-            self.map_details = details
-        else:
+        if data is None:
             self.map_error = details.get("error")
+            self.async_update_listeners()
+            return details
+        self.map = data
+        self.map_updated = dt_util.utcnow()
+        self.map_error = None
+        self._check_rooms_changed()
+        if self.session:
+            room = data.robot_room
+            if room is not None:
+                self.session.visited[room] += 1
+        await self._render()
+        details = {**details, **describe(data), "pixel_values": pixel_histogram(data)}
+        self.map_details = details
         self.async_update_listeners()
         return details
+
+    async def _render(self) -> None:
+        if not self.map:
+            return
+        highlight = None
+        if self.session and self.session.requested:
+            highlight = {self.resolve_room(n) for n in self.session.requested if n in self.room_names}
+        try:
+            self.map_image, self.map_attributes = await self.hass.async_add_executor_job(
+                render, self.map, self.rooms, highlight
+            )
+        except Exception:  # noqa: BLE001 - un errore di disegno non deve fermare il resto
+            _LOGGER.exception("Disegno della mappa non riuscito")
+
+    def _check_rooms_changed(self) -> None:
+        current = {r.room_id: r.name for r in self.rooms.values()}
+        diff = self.history.compare(current)
+        self.history.remember_rooms(current)
+        if not diff:
+            return
+        table = "\n".join(f"- {k} → **{v}**" for k, v in diff["dopo"].items())
+        lines = [
+            "Il robot ha una nuova mappa. Le automazioni che usano i **nomi** continuano a funzionare.",
+            "",
+            "Nuova tabella numero → stanza:",
+            table,
+        ]
+        if diff["nomi_spariti"]:
+            lines += ["", "⚠️ Nomi non più presenti: " + ", ".join(diff["nomi_spariti"])
+                      + ". Dai il nome o il tipo giusto alle stanze nell'app, poi premi 'Rileggi mappa'."]
+        persistent_notification.async_create(
+            self.hass, "\n".join(lines), title="ALFRED: stanze cambiate", notification_id=f"{DOMAIN}_rooms_changed"
+        )
+        self.hass.bus.async_fire(EVENT_ROOMS_CHANGED, diff)
 
     # --- stato -----------------------------------------------------------
     async def _async_update_data(self) -> dict[tuple[int, int], Any]:
@@ -134,19 +269,33 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
             raise UpdateFailed(str(err)) from err
 
         status = data.get(P_STATUS)
-        returned_home = (
-            self._last_status not in (None, STATUS_CHARGING, STATUS_CHARGED)
-            and status in (STATUS_CHARGING, STATUS_CHARGED)
-        )
+        previous = self._last_status
         self._last_status = status
-        map_interval = timedelta(minutes=self.entry.options.get(CONF_MAP_INTERVAL, DEFAULT_MAP_INTERVAL))
-        stale = self.map_updated is None or dt_util.utcnow() - self.map_updated > map_interval
-        if not self._map_busy and (returned_home or (stale and self._map_attempt_due())):
-            self.hass.async_create_task(self._background_map())
-        return data
+        now = dt_util.utcnow()
 
-    _map_attempts: int = 0
-    _map_busy: bool = False
+        # inizio sessione
+        if status in CLEANING_STATUSES and self.session is None:
+            source, names, full = self._pending or ("esterno", None, False)
+            self.session = CleaningSession(started=now, source=source, requested=names, full=full)
+            self._pending = None
+        if self.session:
+            self.session.max_area = max(self.session.max_area, int(data.get(P_CLEANING_AREA) or 0))
+            self.session.max_time = max(self.session.max_time, int(data.get(P_CLEANING_TIME) or 0))
+
+        # fine sessione: robot di nuovo a casa
+        if self.session and status in HOME_STATUSES and previous not in HOME_STATUSES:
+            self.hass.async_create_task(self._finish_session())
+        elif not self._map_busy:
+            if self.session and status in CLEANING_STATUSES:
+                live = self.entry.options.get(CONF_LIVE_MAP_INTERVAL, DEFAULT_LIVE_MAP_INTERVAL)
+                if live and (self.map_updated is None or now - self.map_updated >= timedelta(seconds=live)):
+                    self.hass.async_create_task(self._background_map())
+            else:
+                interval = timedelta(minutes=self.entry.options.get(CONF_MAP_INTERVAL, DEFAULT_MAP_INTERVAL))
+                stale = self.map_updated is None or now - self.map_updated > interval
+                if stale and self._map_attempt_due():
+                    self.hass.async_create_task(self._background_map())
+        return data
 
     def _map_attempt_due(self) -> bool:
         """Senza errori legge subito; dopo un errore ritenta ogni 40 aggiornamenti."""
@@ -163,3 +312,62 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
             _LOGGER.exception("Lettura della mappa non riuscita")
         finally:
             self._map_busy = False
+
+    # --- fine pulizia ----------------------------------------------------
+    def _cleaned_rooms(self, session: CleaningSession) -> list[str]:
+        if session.requested:
+            return list(session.requested)
+        visited = [room for room, count in session.visited.items() if count >= 2 and room in self.rooms]
+        if visited:
+            return [self.room_name(r) for r in sorted(visited)]
+        if session.full:
+            return self.room_names
+        return []
+
+    async def _finish_session(self) -> None:
+        session = self.session
+        self.session = None
+        if session is None:
+            return
+        self._map_busy = True
+        try:
+            await self.async_refresh_map()  # mappa finale (anche per la foto)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Mappa finale non letta", exc_info=True)
+        finally:
+            self._map_busy = False
+        rooms = self._cleaned_rooms(session)
+        finished = dt_util.utcnow()
+        if rooms and session.max_area > 0:
+            self.history.mark_cleaned(rooms, finished)
+        image_path = await self._save_image()
+        self.history.last_session = {
+            "stanze": rooms,
+            "area_m2": session.max_area,
+            "durata_min": session.max_time,
+            "avviata_da": session.source,
+            "inizio": session.started.isoformat(),
+            "fine": finished.isoformat(),
+            "immagine": image_path,
+            "batteria": (self.data or {}).get(P_BATTERY),
+        }
+        self.history.save()
+        self.hass.bus.async_fire(EVENT_CLEANING_FINISHED, {"entry_id": self.entry.entry_id, **self.history.last_session})
+        self.async_update_listeners()
+
+    async def _save_image(self) -> str | None:
+        if not self.map_image:
+            return None
+        media = self.hass.config.media_dirs.get("local") or self.hass.config.path("media")
+        path = Path(media) / MEDIA_SUBDIR / LAST_CLEAN_IMAGE
+
+        def write() -> None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(self.map_image or b"")
+
+        try:
+            await self.hass.async_add_executor_job(write)
+        except OSError as err:
+            _LOGGER.warning("Immagine della pulizia non salvata in %s: %s", path, err)
+            return None
+        return str(path)

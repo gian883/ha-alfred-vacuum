@@ -17,6 +17,38 @@ Comandi in **rete locale**, **nomi delle stanze** letti dalla mappa del robot, p
 | Pulsanti | svuota contenitore, azzera spazzole e filtro, rileggi mappa |
 | Diagnosi | servizio `alfred_vacuum.send_command` (legge/scrive proprietà, esegue azioni e restituisce la risposta) |
 
+## Nomi stabili (anche dopo una nuova mappatura)
+
+Nelle automazioni usa **sempre il nome** della stanza (`rooms: ["Cucina"]`), mai il numero.
+L'integrazione traduce il nome nel numero **al momento del comando**, con la mappa attuale:
+se rifai la mappatura e la cucina passa dal 4 al 2, le automazioni continuano a funzionare.
+
+- Quando la mappa cambia arriva una **notifica** con la nuova tabella numero → stanza e l'evento `alfred_vacuum_rooms_changed`.
+- Lo **storico** (ultima pulizia di ogni stanza) è legato al nome: una rimappatura non lo azzera.
+- Dopo una rimappatura dai nell'app il nome o il tipo giusto a ogni stanza; con due stanze dello stesso tipo usa nomi personalizzati.
+
+## Mappa
+
+Entità `camera.<robot>_mappa`: stanze colorate con il nome, base di ricarica, robot con la direzione.
+Durante la pulizia si aggiorna ogni 30 s (configurabile). Negli attributi ci sono `calibration_points`
+e `rooms` per la card interattiva **Xiaomi Vacuum Map Card** (HACS → Frontend).
+
+## Automazioni integrate (spente di default)
+
+| Interruttore | Cosa fa | Opzioni |
+|---|---|---|
+| **Pulizia quando esci** | quando l'entità di presenza diventa "fuori casa" e resta tale per N minuti, pulisce le stanze scelte; al rientro manda il robot alla base | entità di presenza, stanze, attesa, intervallo minimo |
+| **Stanze trascurate** | ogni giorno all'orario scelto pulisce le stanze non pulite da più di N giorni, dalla più trascurata | orario, giorni, massimo stanze, esclusioni |
+
+Le automazioni non partono se il robot non è alla base o ha meno del 40% di batteria.
+Servizio `alfred_vacuum.clean_overdue` per lanciarla a mano (`dry_run: true` = solo elenco).
+
+## Fine pulizia
+
+Evento `alfred_vacuum_cleaning_finished` con `stanze`, `area_m2`, `durata_min`, `avviata_da`, `immagine`
+(PNG della mappa salvato in `/media/alfred_vacuum/ultima_pulizia.png`, utile per Telegram).
+Sensore **Ultima pulizia** con gli stessi dati.
+
 ## Installazione (HACS)
 
 1. HACS → menu ⋮ → **Repository personalizzati** → `https://github.com/gian883/ha-alfred-vacuum`, tipo **Integrazione**.

@@ -24,6 +24,9 @@ clean_rooms:
       selector:
         select:
           options: ["Bassa", "Media", "Alta"]
+    source:
+      selector:
+        text:
 
 refresh_map:
   fields:
@@ -63,3 +66,15 @@ send_command:
     params:
       selector:
         object:
+
+clean_overdue:
+  fields:
+    entity_id:
+      selector:
+        entity:
+          integration: alfred_vacuum
+          domain: vacuum
+    dry_run:
+      default: false
+      selector:
+        boolean:

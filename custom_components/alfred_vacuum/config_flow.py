@@ -16,17 +16,39 @@ from homeassistant.components.http import KEY_HASS, HomeAssistantView
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_TOKEN, CONF_USERNAME
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
+    BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
+    TimeSelector,
 )
 
 from .cloud import CloudAuthError, CloudCaptchaRequired, CloudError, CloudSession, TwoFactorChallenge, XiaomiCloud
 from .const import (
+    CONF_AWAY_DELAY,
+    CONF_AWAY_ENTITY,
+    CONF_AWAY_MIN_HOURS,
+    CONF_AWAY_RETURN,
+    CONF_AWAY_ROOMS,
+    CONF_LIVE_MAP_INTERVAL,
+    CONF_SMART_DAYS,
+    CONF_SMART_EXCLUDE,
+    CONF_SMART_MAX,
+    CONF_SMART_TIME,
+    DEFAULT_AWAY_DELAY,
+    DEFAULT_AWAY_ENTITY,
+    DEFAULT_AWAY_MIN_HOURS,
+    DEFAULT_LIVE_MAP_INTERVAL,
+    DEFAULT_SMART_DAYS,
+    DEFAULT_SMART_MAX,
+    DEFAULT_SMART_TIME,
     CONF_CLOUD,
     CONF_COUNTRY,
     CONF_DID,
@@ -310,23 +332,80 @@ class AlfredConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class AlfredOptionsFlow(OptionsFlow):
-    """Nomi stanze personalizzati e frequenze di aggiornamento."""
+    """Nomi stanze, frequenze di aggiornamento e automazioni integrate."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
-        options = self.config_entry.options
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_ROOM_NAMES, default=options.get(CONF_ROOM_NAMES, "")): str,
-                    vol.Required(
-                        CONF_SCAN_INTERVAL, default=options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-                    ): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
-                    vol.Required(
-                        CONF_MAP_INTERVAL, default=options.get(CONF_MAP_INTERVAL, DEFAULT_MAP_INTERVAL)
-                    ): vol.All(vol.Coerce(int), vol.Range(min=5, max=1440)),
-                }
-            ),
+            flat: dict[str, Any] = {}
+            for key, value in user_input.items():
+                if isinstance(value, dict):
+                    flat.update(value)
+                else:
+                    flat[key] = value
+            return self.async_create_entry(data=flat)
+
+        o = self.config_entry.options
+        try:
+            names = self.config_entry.runtime_data.coordinator.room_names
+        except AttributeError:
+            names = []
+        rooms_selector = SelectSelector(
+            SelectSelectorConfig(options=names, multiple=True, custom_value=True, mode=SelectSelectorMode.DROPDOWN)
         )
+
+        def listed(key: str) -> list[str]:
+            value = o.get(key)
+            if isinstance(value, list):
+                return value
+            return [n.strip() for n in str(value or "").split(",") if n.strip()]
+
+        schema = vol.Schema(
+            {
+                vol.Required("general"): section(
+                    vol.Schema(
+                        {
+                            vol.Optional(CONF_ROOM_NAMES, default=o.get(CONF_ROOM_NAMES, "")): str,
+                            vol.Required(CONF_SCAN_INTERVAL, default=o.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)):
+                                vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
+                            vol.Required(CONF_MAP_INTERVAL, default=o.get(CONF_MAP_INTERVAL, DEFAULT_MAP_INTERVAL)):
+                                vol.All(vol.Coerce(int), vol.Range(min=5, max=1440)),
+                            vol.Required(
+                                CONF_LIVE_MAP_INTERVAL, default=o.get(CONF_LIVE_MAP_INTERVAL, DEFAULT_LIVE_MAP_INTERVAL)
+                            ): vol.All(vol.Coerce(int), vol.Range(min=0, max=600)),
+                        }
+                    ),
+                    {"collapsed": False},
+                ),
+                vol.Required("away"): section(
+                    vol.Schema(
+                        {
+                            vol.Required(CONF_AWAY_ENTITY, default=o.get(CONF_AWAY_ENTITY, DEFAULT_AWAY_ENTITY)):
+                                EntitySelector(EntitySelectorConfig(
+                                    domain=["input_boolean", "person", "device_tracker", "binary_sensor", "group"]
+                                )),
+                            vol.Optional(CONF_AWAY_ROOMS, default=listed(CONF_AWAY_ROOMS)): rooms_selector,
+                            vol.Required(CONF_AWAY_DELAY, default=o.get(CONF_AWAY_DELAY, DEFAULT_AWAY_DELAY)):
+                                vol.All(vol.Coerce(int), vol.Range(min=0, max=240)),
+                            vol.Required(CONF_AWAY_MIN_HOURS, default=o.get(CONF_AWAY_MIN_HOURS, DEFAULT_AWAY_MIN_HOURS)):
+                                vol.All(vol.Coerce(float), vol.Range(min=0, max=168)),
+                            vol.Required(CONF_AWAY_RETURN, default=o.get(CONF_AWAY_RETURN, True)): BooleanSelector(),
+                        }
+                    ),
+                    {"collapsed": True},
+                ),
+                vol.Required("smart"): section(
+                    vol.Schema(
+                        {
+                            vol.Required(CONF_SMART_TIME, default=o.get(CONF_SMART_TIME, DEFAULT_SMART_TIME)): TimeSelector(),
+                            vol.Required(CONF_SMART_DAYS, default=o.get(CONF_SMART_DAYS, DEFAULT_SMART_DAYS)):
+                                vol.All(vol.Coerce(float), vol.Range(min=0.5, max=60)),
+                            vol.Required(CONF_SMART_MAX, default=o.get(CONF_SMART_MAX, DEFAULT_SMART_MAX)):
+                                vol.All(vol.Coerce(int), vol.Range(min=1, max=10)),
+                            vol.Optional(CONF_SMART_EXCLUDE, default=listed(CONF_SMART_EXCLUDE)): rooms_selector,
+                        }
+                    ),
+                    {"collapsed": True},
+                ),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)

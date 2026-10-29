@@ -15,6 +15,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfArea, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import AlfredConfigEntry
 from .const import (
@@ -129,7 +130,12 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data.coordinator
     entities: list[SensorEntity] = [AlfredSensor(coordinator, d) for d in SENSORS]
-    entities += [AlfredRoomsSensor(coordinator), AlfredCurrentRoomSensor(coordinator)]
+    entities += [
+        AlfredRoomsSensor(coordinator),
+        AlfredCurrentRoomSensor(coordinator),
+        AlfredOverdueSensor(coordinator, entry.runtime_data.smart),
+        AlfredLastCleaningSensor(coordinator),
+    ]
     async_add_entities(entities)
 
 
@@ -166,6 +172,10 @@ class AlfredRoomsSensor(AlfredEntity, SensorEntity):
         return {
             "stanze": {r.room_id: r.name for r in coord.rooms.values()},
             "tipi": {r.room_id: r.room_type for r in coord.rooms.values()},
+            "ultima_pulizia": {
+                r.name: (d.isoformat() if (d := coord.history.last_cleaned(r.name)) else None)
+                for r in coord.rooms.values()
+            },
             "mappa_aggiornata": coord.map_updated.isoformat() if coord.map_updated else None,
             "errore_mappa": coord.map_error,
         }
@@ -183,3 +193,44 @@ class AlfredCurrentRoomSensor(AlfredEntity, SensorEntity):
     def native_value(self) -> str | None:
         room = self.coordinator.current_room
         return room.name if room else None
+
+
+class AlfredOverdueSensor(AlfredEntity, SensorEntity):
+    """Quante stanze non sono pulite da più dei giorni impostati (elenco negli attributi)."""
+
+    _attr_icon = "mdi:calendar-alert"
+
+    def __init__(self, coordinator, smart) -> None:
+        super().__init__(coordinator, "overdue_rooms")
+        self._smart = smart
+
+    @property
+    def native_value(self) -> int:
+        return len(self._smart.candidates())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "stanze": [name for name, _ in self._smart.candidates()],
+            "giorni_soglia": self._smart.days,
+            "ultimo_esito": self._smart.last_result,
+        }
+
+
+class AlfredLastCleaningSensor(AlfredEntity, SensorEntity):
+    """Fine dell'ultima pulizia; negli attributi stanze, area, durata, chi l'ha avviata."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:robot-vacuum"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "last_cleaning")
+
+    @property
+    def native_value(self):
+        last = self.coordinator.last_session
+        return dt_util.parse_datetime(last["fine"]) if last else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return dict(self.coordinator.last_session or {})

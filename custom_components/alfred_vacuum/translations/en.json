@@ -12,28 +12,49 @@
       "cloud": {
         "title": "Xiaomi account",
         "description": "Use the same account as the Xiaomi Home app. The password is only used now and is not stored.",
-        "data": { "username": "Email, phone or Xiaomi ID", "password": "Password", "country": "Server" }
+        "data": {
+          "username": "Email, phone or Xiaomi ID",
+          "password": "Password",
+          "country": "Server"
+        }
       },
       "captcha": {
         "title": "Xiaomi captcha",
         "description": "Xiaomi asks to confirm you are not a robot. Type the characters in the image:\n\n{image}",
-        "data": { "captcha": "Characters in the image" }
+        "data": {
+          "captcha": "Characters in the image"
+        }
       },
       "verify": {
         "title": "Two-step verification",
         "description": "Xiaomi sent a code to {target}. Enter it below.",
-        "data": { "code": "Code" }
+        "data": {
+          "code": "Code"
+        }
       },
-      "device": { "title": "Choose the robot", "data": { "did": "Robot" } },
+      "device": {
+        "title": "Choose the robot",
+        "data": {
+          "did": "Robot"
+        }
+      },
       "manual": {
         "title": "Local connection",
         "description": "IP address and token (32 characters) of the robot.",
-        "data": { "host": "IP address", "token": "Token", "did": "Device ID (optional)", "name": "Name" }
+        "data": {
+          "host": "IP address",
+          "token": "Token",
+          "did": "Device ID (optional)",
+          "name": "Name"
+        }
       },
       "reauth_confirm": {
         "title": "Sign in to Xiaomi again",
         "description": "The Xiaomi session expired. Enter your credentials again (the password is not stored).",
-        "data": { "username": "Email, phone or Xiaomi ID", "password": "Password" }
+        "data": {
+          "username": "Email, phone or Xiaomi ID",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -55,70 +76,199 @@
     "step": {
       "init": {
         "title": "Options",
-        "data": {
-          "room_names": "Custom room names",
-          "scan_interval": "State update (seconds)",
-          "map_interval": "Map refresh (minutes)"
-        },
-        "data_description": { "room_names": "Optional. Example: 1=Living room, 4=Kitchen. Overrides names read from the map." }
+        "data": {},
+        "data_description": {},
+        "sections": {
+          "general": {
+            "name": "General",
+            "data": {
+              "room_names": "Custom room names",
+              "scan_interval": "State update (seconds)",
+              "map_interval": "Map refresh while docked (minutes)",
+              "live_map_interval": "Map while cleaning (seconds, 0 = off)"
+            },
+            "data_description": {
+              "room_names": "Optional. Use the NAME read from the map so it survives a new mapping. Example: Bedroom=Main bedroom"
+            }
+          },
+          "away": {
+            "name": "Clean when I leave",
+            "description": "Enabled by the 'Clean when I leave' switch.",
+            "data": {
+              "away_presence_entity": "Presence entity",
+              "away_rooms": "Rooms to clean (empty = whole home)",
+              "away_delay": "Wait after leaving (minutes)",
+              "away_min_hours": "At most once every (hours)",
+              "away_return_home": "Send the robot home when I return"
+            }
+          },
+          "smart": {
+            "name": "Neglected rooms",
+            "description": "Enabled by the 'Neglected rooms' switch.",
+            "data": {
+              "smart_time": "Time",
+              "smart_days": "Clean rooms not cleaned for (days)",
+              "smart_max_rooms": "Max rooms per run",
+              "smart_exclude": "Rooms to exclude"
+            }
+          }
+        }
       }
     }
   },
   "selector": {
     "country": {
       "options": {
-        "de": "Europe (de)", "cn": "China (cn)", "us": "United States (us)", "ru": "Russia (ru)",
-        "sg": "Singapore (sg)", "i2": "India (i2)", "tw": "Taiwan (tw)"
+        "de": "Europe (de)",
+        "cn": "China (cn)",
+        "us": "United States (us)",
+        "ru": "Russia (ru)",
+        "sg": "Singapore (sg)",
+        "i2": "India (i2)",
+        "tw": "Taiwan (tw)"
       }
     }
   },
   "entity": {
     "sensor": {
-      "battery": { "name": "Battery" },
-      "status": { "name": "Status" },
-      "charging_state": { "name": "Charging" },
-      "cleaning_time": { "name": "Cleaning time" },
-      "cleaning_area": { "name": "Cleaned area" },
-      "error": { "name": "Error code" },
-      "faults": { "name": "Faults" },
-      "work_mode": { "name": "Work mode" },
-      "task_status": { "name": "Task status" },
-      "main_brush_left": { "name": "Main brush hours left" },
-      "main_brush_life": { "name": "Main brush" },
-      "side_brush_left": { "name": "Side brush hours left" },
-      "side_brush_life": { "name": "Side brush" },
-      "filter_life": { "name": "Filter" },
-      "filter_left": { "name": "Filter hours left" },
-      "total_time": { "name": "Total cleaning time" },
-      "total_count": { "name": "Total cleanings" },
-      "total_area": { "name": "Total cleaned area" },
-      "dust_status": { "name": "Emptying status" },
-      "rooms": { "name": "Rooms" },
-      "current_room": { "name": "Current room" }
+      "battery": {
+        "name": "Battery"
+      },
+      "status": {
+        "name": "Status"
+      },
+      "charging_state": {
+        "name": "Charging"
+      },
+      "cleaning_time": {
+        "name": "Cleaning time"
+      },
+      "cleaning_area": {
+        "name": "Cleaned area"
+      },
+      "error": {
+        "name": "Error code"
+      },
+      "faults": {
+        "name": "Faults"
+      },
+      "work_mode": {
+        "name": "Work mode"
+      },
+      "task_status": {
+        "name": "Task status"
+      },
+      "main_brush_left": {
+        "name": "Main brush hours left"
+      },
+      "main_brush_life": {
+        "name": "Main brush"
+      },
+      "side_brush_left": {
+        "name": "Side brush hours left"
+      },
+      "side_brush_life": {
+        "name": "Side brush"
+      },
+      "filter_life": {
+        "name": "Filter"
+      },
+      "filter_left": {
+        "name": "Filter hours left"
+      },
+      "total_time": {
+        "name": "Total cleaning time"
+      },
+      "total_count": {
+        "name": "Total cleanings"
+      },
+      "total_area": {
+        "name": "Total cleaned area"
+      },
+      "dust_status": {
+        "name": "Emptying status"
+      },
+      "rooms": {
+        "name": "Rooms"
+      },
+      "current_room": {
+        "name": "Current room"
+      },
+      "overdue_rooms": {
+        "name": "Rooms to clean"
+      },
+      "last_cleaning": {
+        "name": "Last cleaning"
+      }
     },
-    "binary_sensor": { "water_tank": { "name": "Water tank" } },
+    "binary_sensor": {
+      "water_tank": {
+        "name": "Water tank"
+      }
+    },
     "select": {
-      "fan_speed": { "name": "Suction power" },
-      "water_level": { "name": "Water level" },
-      "selected_room": { "name": "Room to clean" }
+      "fan_speed": {
+        "name": "Suction power"
+      },
+      "water_level": {
+        "name": "Water level"
+      },
+      "selected_room": {
+        "name": "Room to clean"
+      }
     },
     "number": {
-      "volume": { "name": "Volume" },
-      "auto_empty_every": { "name": "Empty every N cleanings" }
+      "volume": {
+        "name": "Volume"
+      },
+      "auto_empty_every": {
+        "name": "Empty every N cleanings"
+      }
     },
     "switch": {
-      "auto_empty": { "name": "Auto empty" },
-      "carpet_boost": { "name": "Carpet boost" },
-      "resume_after_charge": { "name": "Resume after charging" },
-      "do_not_disturb": { "name": "Do not disturb" }
+      "auto_empty": {
+        "name": "Auto empty"
+      },
+      "carpet_boost": {
+        "name": "Carpet boost"
+      },
+      "resume_after_charge": {
+        "name": "Resume after charging"
+      },
+      "do_not_disturb": {
+        "name": "Do not disturb"
+      },
+      "away_cleaning": {
+        "name": "Clean when I leave"
+      },
+      "smart_cleaning": {
+        "name": "Neglected rooms"
+      }
     },
     "button": {
-      "empty_bin": { "name": "Empty dust bin" },
-      "reset_main_brush": { "name": "Reset main brush" },
-      "reset_side_brush": { "name": "Reset side brush" },
-      "reset_filter": { "name": "Reset filter" },
-      "clean_selected_room": { "name": "Clean selected room" },
-      "refresh_map": { "name": "Refresh map" }
+      "empty_bin": {
+        "name": "Empty dust bin"
+      },
+      "reset_main_brush": {
+        "name": "Reset main brush"
+      },
+      "reset_side_brush": {
+        "name": "Reset side brush"
+      },
+      "reset_filter": {
+        "name": "Reset filter"
+      },
+      "clean_selected_room": {
+        "name": "Clean selected room"
+      },
+      "refresh_map": {
+        "name": "Refresh map"
+      }
+    },
+    "camera": {
+      "map": {
+        "name": "Map"
+      }
     }
   },
   "services": {
@@ -126,28 +276,84 @@
       "name": "Clean rooms",
       "description": "Cleans one or more rooms, by name or number.",
       "fields": {
-        "entity_id": { "name": "Robot", "description": "The robot (optional if you have only one)." },
-        "rooms": { "name": "Rooms", "description": "List of names or numbers, e.g. [\"Kitchen\"] or [4, 2]." },
-        "repeats": { "name": "Passes", "description": "How many times to clean each room (1-3)." },
-        "fan_speed": { "name": "Suction", "description": "Empty = current setting." },
-        "water": { "name": "Water", "description": "Empty = current setting." }
+        "entity_id": {
+          "name": "Robot",
+          "description": "The robot (optional if you have only one)."
+        },
+        "rooms": {
+          "name": "Rooms",
+          "description": "List of names or numbers, e.g. [\"Kitchen\"] or [4, 2]."
+        },
+        "repeats": {
+          "name": "Passes",
+          "description": "How many times to clean each room (1-3)."
+        },
+        "fan_speed": {
+          "name": "Suction",
+          "description": "Empty = current setting."
+        },
+        "water": {
+          "name": "Water",
+          "description": "Empty = current setting."
+        },
+        "source": {
+          "name": "Source",
+          "description": "Free text shown in the history (e.g. 'Telegram')."
+        }
       }
     },
     "refresh_map": {
       "name": "Refresh map",
       "description": "Requests the map from the robot and updates room names. Returns the read details.",
-      "fields": { "entity_id": { "name": "Robot", "description": "The robot (optional)." } }
+      "fields": {
+        "entity_id": {
+          "name": "Robot",
+          "description": "The robot (optional)."
+        }
+      }
     },
     "send_command": {
       "name": "MIoT command",
       "description": "For testing: read/write a property or run an action and return the reply.",
       "fields": {
-        "entity_id": { "name": "Robot", "description": "The robot (optional)." },
-        "command": { "name": "Command", "description": "get_properties, set_property or action." },
-        "siid": { "name": "siid", "description": "Service number." },
-        "id": { "name": "piid / aiid", "description": "Property or action number." },
-        "value": { "name": "Value", "description": "For set_property." },
-        "params": { "name": "Parameters", "description": "For action: list of {piid, value}." }
+        "entity_id": {
+          "name": "Robot",
+          "description": "The robot (optional)."
+        },
+        "command": {
+          "name": "Command",
+          "description": "get_properties, set_property or action."
+        },
+        "siid": {
+          "name": "siid",
+          "description": "Service number."
+        },
+        "id": {
+          "name": "piid / aiid",
+          "description": "Property or action number."
+        },
+        "value": {
+          "name": "Value",
+          "description": "For set_property."
+        },
+        "params": {
+          "name": "Parameters",
+          "description": "For action: list of {piid, value}."
+        }
+      }
+    },
+    "clean_overdue": {
+      "name": "Clean neglected rooms",
+      "description": "Cleans the neglected rooms now (even with the switch off). With 'List only' it returns the rooms without starting the robot.",
+      "fields": {
+        "entity_id": {
+          "name": "Robot",
+          "description": "The robot (optional)."
+        },
+        "dry_run": {
+          "name": "List only",
+          "description": "Do not start the robot, only return the list."
+        }
       }
     }
   }

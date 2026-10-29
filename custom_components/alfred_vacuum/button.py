@@ -53,10 +53,10 @@ class AlfredCleanSelectedRoom(AlfredEntity, ButtonEntity):
         if not state or state == "Nessuna stanza":
             raise HomeAssistantError("Scegli prima una stanza nel selettore 'Stanza da pulire'")
         try:
-            room = self.coordinator.resolve_room(state)
+            self.coordinator.resolve_room(state)
         except ValueError as err:
             raise HomeAssistantError(str(err)) from err
-        await self.run(self.coordinator.robot.clean_rooms([room], self.coordinator.data or {}))
+        await self.run(self.coordinator.async_clean_rooms([state], source="pulsante"))
 
 
 class AlfredRefreshMap(AlfredEntity, ButtonEntity):

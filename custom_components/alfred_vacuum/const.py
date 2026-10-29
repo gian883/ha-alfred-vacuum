@@ -21,6 +21,39 @@ CONF_ROOM_NAMES: Final = "room_names"
 CONF_SCAN_INTERVAL: Final = "scan_interval"
 CONF_MAP_INTERVAL: Final = "map_interval"
 
+# Mappa dal vivo durante la pulizia
+CONF_LIVE_MAP_INTERVAL: Final = "live_map_interval"
+DEFAULT_LIVE_MAP_INTERVAL: Final = 30  # secondi (0 = spento)
+
+# Idea 1: pulizia quando esci
+CONF_AWAY_ENTITY: Final = "away_presence_entity"
+CONF_AWAY_ROOMS: Final = "away_rooms"
+CONF_AWAY_DELAY: Final = "away_delay"
+CONF_AWAY_MIN_HOURS: Final = "away_min_hours"
+CONF_AWAY_RETURN: Final = "away_return_home"
+DEFAULT_AWAY_ENTITY: Final = "input_boolean.giggi_in_casa"
+DEFAULT_AWAY_DELAY: Final = 10  # minuti
+DEFAULT_AWAY_MIN_HOURS: Final = 12
+
+# Idea 3: stanze trascurate
+CONF_SMART_TIME: Final = "smart_time"
+CONF_SMART_DAYS: Final = "smart_days"
+CONF_SMART_MAX: Final = "smart_max_rooms"
+CONF_SMART_EXCLUDE: Final = "smart_exclude"
+DEFAULT_SMART_TIME: Final = "11:00:00"
+DEFAULT_SMART_DAYS: Final = 3
+DEFAULT_SMART_MAX: Final = 2
+
+MIN_BATTERY_AUTO: Final = 40  # sotto questa carica le automazioni non partono
+
+# Eventi
+EVENT_CLEANING_FINISHED: Final = "alfred_vacuum_cleaning_finished"
+EVENT_ROOMS_CHANGED: Final = "alfred_vacuum_rooms_changed"
+
+# Immagine dell'ultima pulizia (per Telegram)
+MEDIA_SUBDIR: Final = "alfred_vacuum"
+LAST_CLEAN_IMAGE: Final = "ultima_pulizia.png"
+
 DEFAULT_COUNTRY: Final = "de"
 DEFAULT_SCAN_INTERVAL: Final = 15  # secondi
 DEFAULT_MAP_INTERVAL: Final = 60  # minuti tra due letture della mappa
@@ -30,6 +63,7 @@ COUNTRIES: Final = ["de", "cn", "us", "ru", "sg", "i2", "tw"]
 SERVICE_CLEAN_ROOMS: Final = "clean_rooms"
 SERVICE_REFRESH_MAP: Final = "refresh_map"
 SERVICE_SEND_COMMAND: Final = "send_command"
+SERVICE_CLEAN_OVERDUE: Final = "clean_overdue"
 
 # --- Specifica MIoT del D10 Plus (urn:miot-spec-v2:device:vacuum:0000A006:dreame-r2205:2)
 # Ogni proprietà è (siid, piid).

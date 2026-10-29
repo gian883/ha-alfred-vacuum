@@ -14,7 +14,6 @@ from .const import (
     A_DOCK,
     A_LOCATE,
     A_PAUSE,
-    A_START,
     A_STOP,
     FAN_SPEEDS,
     P_BATTERY,
@@ -93,7 +92,7 @@ class AlfredVacuum(AlfredEntity, StateVacuumEntity):
         }
 
     async def async_start(self) -> None:
-        await self.run(self.coordinator.robot.action(A_START))
+        await self.run(self.coordinator.async_clean_all(source="manuale"))
 
     async def async_pause(self) -> None:
         await self.run(self.coordinator.robot.action(A_PAUSE))
@@ -118,8 +117,9 @@ class AlfredVacuum(AlfredEntity, StateVacuumEntity):
         if command not in ("clean_rooms", "app_segment_clean"):
             raise ServiceValidationError("Comandi supportati: clean_rooms")
         rooms = params.get("rooms") if isinstance(params, dict) else params
-        try:
-            ids = [self.coordinator.resolve_room(r) for r in (rooms or [])]
-        except ValueError as err:
-            raise ServiceValidationError(str(err)) from err
-        await self.run(self.coordinator.robot.clean_rooms(ids, self.coordinator.data or {}))
+        for room in rooms or []:
+            try:
+                self.coordinator.resolve_room(room)
+            except ValueError as err:
+                raise ServiceValidationError(str(err)) from err
+        await self.run(self.coordinator.async_clean_rooms(list(rooms or []), source="comando"))

@@ -28,10 +28,12 @@ from .const import (
     DOMAIN,
     FAN_SPEEDS,
     MOP_LEVELS,
+    SERVICE_CLEAN_OVERDUE,
     SERVICE_CLEAN_ROOMS,
     SERVICE_REFRESH_MAP,
     SERVICE_SEND_COMMAND,
 )
+from .automations import AwayCleaning, SmartCleaning
 from .coordinator import AlfredCoordinator
 from .device import AlfredRobot, RobotError
 from .miio import MiioClient
@@ -46,6 +48,7 @@ PLATFORMS = [
     Platform.NUMBER,
     Platform.SWITCH,
     Platform.BUTTON,
+    Platform.CAMERA,
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -55,6 +58,8 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 class AlfredData:
     coordinator: AlfredCoordinator
     cloud: XiaomiCloud | None
+    away: AwayCleaning
+    smart: SmartCleaning
 
 
 type AlfredConfigEntry = ConfigEntry[AlfredData]
@@ -80,9 +85,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlfredConfigEntry) -> bo
         local = MiioClient(entry.data[CONF_HOST], entry.data[CONF_TOKEN])
     robot = AlfredRobot(str(entry.data[CONF_DID]), local, cloud)
     coordinator = AlfredCoordinator(hass, entry, robot)
+    await coordinator.async_setup()
     await coordinator.async_config_entry_first_refresh()
-    entry.runtime_data = AlfredData(coordinator, cloud)
+    away = AwayCleaning(hass, coordinator)
+    smart = SmartCleaning(hass, coordinator)
+    entry.runtime_data = AlfredData(coordinator, cloud, away, smart)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(away.async_start())
+    entry.async_on_unload(smart.async_start())
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     return True
 
@@ -101,6 +111,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: AlfredConfigEntry) -> b
 # --- servizi ---------------------------------------------------------------
 
 def _coordinator_for(hass: HomeAssistant, call: ServiceCall) -> AlfredCoordinator:
+    return _data_for(hass, call).coordinator
+
+
+def _data_for(hass: HomeAssistant, call: ServiceCall) -> AlfredData:
     """Trova il robot indicato nella chiamata (o l'unico configurato)."""
     entries = [e for e in hass.config_entries.async_loaded_entries(DOMAIN)]
     if not entries:
@@ -115,11 +129,11 @@ def _coordinator_for(hass: HomeAssistant, call: ServiceCall) -> AlfredCoordinato
             if ent and ent.config_entry_id:
                 for entry in entries:
                     if entry.entry_id == ent.config_entry_id:
-                        return entry.runtime_data.coordinator
+                        return entry.runtime_data
         raise ServiceValidationError(f"Entità {entity_ids} non appartiene ad Alfred Vacuum")
     if len(entries) > 1:
         raise ServiceValidationError("Più robot configurati: indica entity_id")
-    return entries[0].runtime_data.coordinator
+    return entries[0].runtime_data
 
 
 CLEAN_ROOMS_SCHEMA = vol.Schema(
@@ -129,7 +143,12 @@ CLEAN_ROOMS_SCHEMA = vol.Schema(
         vol.Optional("repeats", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=3)),
         vol.Optional("fan_speed"): vol.In(["Silenziosa", "Standard", "Forte", "Turbo"]),
         vol.Optional("water"): vol.In(["Bassa", "Media", "Alta"]),
+        vol.Optional("source"): cv.string,
     }
+)
+
+CLEAN_OVERDUE_SCHEMA = vol.Schema(
+    {vol.Optional("entity_id"): cv.entity_ids, vol.Optional("dry_run", default=False): cv.boolean}
 )
 
 SEND_COMMAND_SCHEMA = vol.Schema(
@@ -151,23 +170,31 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     fan_ids = {v: k for k, v in FAN_SPEEDS.items()}
     mop_ids = {v: k for k, v in MOP_LEVELS.items()}
 
-    async def clean_rooms(call: ServiceCall) -> None:
+    async def clean_rooms(call: ServiceCall) -> ServiceResponse:
         coordinator = _coordinator_for(hass, call)
         try:
-            rooms = [coordinator.resolve_room(r) for r in call.data["rooms"]]
-        except ValueError as err:
-            raise ServiceValidationError(str(err)) from err
-        try:
-            await coordinator.robot.clean_rooms(
-                rooms,
-                coordinator.data or {},
+            names = await coordinator.async_clean_rooms(
+                call.data["rooms"],
+                source=call.data.get("source", "servizio"),
                 repeats=call.data["repeats"],
                 fan=fan_ids.get(call.data.get("fan_speed")),
                 water=mop_ids.get(call.data.get("water")),
             )
+        except ValueError as err:
+            raise ServiceValidationError(str(err)) from err
         except RobotError as err:
             raise HomeAssistantError(str(err)) from err
-        await coordinator.async_request_refresh()
+        return {"stanze": names}
+
+    async def clean_overdue(call: ServiceCall) -> ServiceResponse:
+        data = _data_for(hass, call)
+        if call.data.get("dry_run"):
+            return {
+                "stanze_trascurate": [
+                    {"stanza": n, "ultima_pulizia": d.isoformat() if d else None} for n, d in data.smart.candidates()
+                ]
+            }
+        return {"esito": await data.smart.async_run(force=True)}
 
     async def refresh_map(call: ServiceCall) -> ServiceResponse:
         coordinator = _coordinator_for(hass, call)
@@ -190,7 +217,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             raise HomeAssistantError(str(err)) from err
         return {"route": coordinator.robot.last_route, "result": _jsonable(result)}
 
-    hass.services.async_register(DOMAIN, SERVICE_CLEAN_ROOMS, clean_rooms, schema=CLEAN_ROOMS_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, SERVICE_CLEAN_ROOMS, clean_rooms, schema=CLEAN_ROOMS_SCHEMA, supports_response=SupportsResponse.OPTIONAL
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_CLEAN_OVERDUE, clean_overdue, schema=CLEAN_OVERDUE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
     hass.services.async_register(
         DOMAIN, SERVICE_REFRESH_MAP, refresh_map, schema=REFRESH_SCHEMA, supports_response=SupportsResponse.OPTIONAL
     )

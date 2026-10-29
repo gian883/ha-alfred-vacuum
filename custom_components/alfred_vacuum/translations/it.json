@@ -21,16 +21,22 @@
       "captcha": {
         "title": "Captcha Xiaomi",
         "description": "Xiaomi chiede di confermare che non sei un robot. Scrivi i caratteri dell'immagine:\n\n{image}",
-        "data": { "captcha": "Caratteri dell'immagine" }
+        "data": {
+          "captcha": "Caratteri dell'immagine"
+        }
       },
       "verify": {
         "title": "Verifica in due passaggi",
         "description": "Xiaomi ha inviato un codice a {target}. Inseriscilo qui sotto.",
-        "data": { "code": "Codice" }
+        "data": {
+          "code": "Codice"
+        }
       },
       "device": {
         "title": "Scegli il robot",
-        "data": { "did": "Robot" }
+        "data": {
+          "did": "Robot"
+        }
       },
       "manual": {
         "title": "Collegamento locale",
@@ -45,7 +51,10 @@
       "reauth_confirm": {
         "title": "Accedi di nuovo a Xiaomi",
         "description": "La sessione Xiaomi è scaduta. Inserisci di nuovo le credenziali (la password non viene salvata).",
-        "data": { "username": "Email, telefono o ID Xiaomi", "password": "Password" }
+        "data": {
+          "username": "Email, telefono o ID Xiaomi",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -67,13 +76,42 @@
     "step": {
       "init": {
         "title": "Opzioni",
-        "data": {
-          "room_names": "Nomi stanze personalizzati",
-          "scan_interval": "Aggiornamento stato (secondi)",
-          "map_interval": "Rilettura mappa (minuti)"
-        },
-        "data_description": {
-          "room_names": "Facoltativo. Esempio: 1=Soggiorno, 4=Cucina. Sostituisce i nomi letti dalla mappa."
+        "data": {},
+        "data_description": {},
+        "sections": {
+          "general": {
+            "name": "Generale",
+            "data": {
+              "room_names": "Nomi stanze personalizzati",
+              "scan_interval": "Aggiornamento stato (secondi)",
+              "map_interval": "Rilettura mappa a robot fermo (minuti)",
+              "live_map_interval": "Mappa durante la pulizia (secondi, 0 = spenta)"
+            },
+            "data_description": {
+              "room_names": "Facoltativo. Usa il NOME letto dalla mappa, così resta valido anche se rifai la mappatura. Esempio: Camera da letto=Camera, Bagno=Bagno grande"
+            }
+          },
+          "away": {
+            "name": "Pulizia quando esci",
+            "description": "Si attiva con l'interruttore 'Pulizia quando esci'.",
+            "data": {
+              "away_presence_entity": "Entità di presenza",
+              "away_rooms": "Stanze da pulire (vuoto = tutta la casa)",
+              "away_delay": "Attesa dopo l'uscita (minuti)",
+              "away_min_hours": "Al massimo una volta ogni (ore)",
+              "away_return_home": "Al rientro manda il robot alla base"
+            }
+          },
+          "smart": {
+            "name": "Stanze trascurate",
+            "description": "Si attiva con l'interruttore 'Stanze trascurate'.",
+            "data": {
+              "smart_time": "Orario",
+              "smart_days": "Pulisci le stanze non pulite da (giorni)",
+              "smart_max_rooms": "Massimo stanze per volta",
+              "smart_exclude": "Stanze da escludere"
+            }
+          }
         }
       }
     }
@@ -93,53 +131,144 @@
   },
   "entity": {
     "sensor": {
-      "battery": { "name": "Batteria" },
-      "status": { "name": "Stato" },
-      "charging_state": { "name": "Ricarica" },
-      "cleaning_time": { "name": "Durata pulizia" },
-      "cleaning_area": { "name": "Area pulita" },
-      "error": { "name": "Codice errore" },
-      "faults": { "name": "Anomalie" },
-      "work_mode": { "name": "Modalità di lavoro" },
-      "task_status": { "name": "Stato attività" },
-      "main_brush_left": { "name": "Spazzola principale – ore residue" },
-      "main_brush_life": { "name": "Spazzola principale" },
-      "side_brush_left": { "name": "Spazzola laterale – ore residue" },
-      "side_brush_life": { "name": "Spazzola laterale" },
-      "filter_life": { "name": "Filtro" },
-      "filter_left": { "name": "Filtro – ore residue" },
-      "total_time": { "name": "Tempo totale di pulizia" },
-      "total_count": { "name": "Pulizie totali" },
-      "total_area": { "name": "Area totale pulita" },
-      "dust_status": { "name": "Stato svuotamento" },
-      "rooms": { "name": "Stanze" },
-      "current_room": { "name": "Stanza attuale" }
+      "battery": {
+        "name": "Batteria"
+      },
+      "status": {
+        "name": "Stato"
+      },
+      "charging_state": {
+        "name": "Ricarica"
+      },
+      "cleaning_time": {
+        "name": "Durata pulizia"
+      },
+      "cleaning_area": {
+        "name": "Area pulita"
+      },
+      "error": {
+        "name": "Codice errore"
+      },
+      "faults": {
+        "name": "Anomalie"
+      },
+      "work_mode": {
+        "name": "Modalità di lavoro"
+      },
+      "task_status": {
+        "name": "Stato attività"
+      },
+      "main_brush_left": {
+        "name": "Spazzola principale – ore residue"
+      },
+      "main_brush_life": {
+        "name": "Spazzola principale"
+      },
+      "side_brush_left": {
+        "name": "Spazzola laterale – ore residue"
+      },
+      "side_brush_life": {
+        "name": "Spazzola laterale"
+      },
+      "filter_life": {
+        "name": "Filtro"
+      },
+      "filter_left": {
+        "name": "Filtro – ore residue"
+      },
+      "total_time": {
+        "name": "Tempo totale di pulizia"
+      },
+      "total_count": {
+        "name": "Pulizie totali"
+      },
+      "total_area": {
+        "name": "Area totale pulita"
+      },
+      "dust_status": {
+        "name": "Stato svuotamento"
+      },
+      "rooms": {
+        "name": "Stanze"
+      },
+      "current_room": {
+        "name": "Stanza attuale"
+      },
+      "overdue_rooms": {
+        "name": "Stanze da pulire"
+      },
+      "last_cleaning": {
+        "name": "Ultima pulizia"
+      }
     },
     "binary_sensor": {
-      "water_tank": { "name": "Serbatoio acqua" }
+      "water_tank": {
+        "name": "Serbatoio acqua"
+      }
     },
     "select": {
-      "fan_speed": { "name": "Potenza di aspirazione" },
-      "water_level": { "name": "Livello acqua" },
-      "selected_room": { "name": "Stanza da pulire" }
+      "fan_speed": {
+        "name": "Potenza di aspirazione"
+      },
+      "water_level": {
+        "name": "Livello acqua"
+      },
+      "selected_room": {
+        "name": "Stanza da pulire"
+      }
     },
     "number": {
-      "volume": { "name": "Volume" },
-      "auto_empty_every": { "name": "Svuota ogni N pulizie" }
+      "volume": {
+        "name": "Volume"
+      },
+      "auto_empty_every": {
+        "name": "Svuota ogni N pulizie"
+      }
     },
     "switch": {
-      "auto_empty": { "name": "Svuotamento automatico" },
-      "carpet_boost": { "name": "Potenza extra sui tappeti" },
-      "resume_after_charge": { "name": "Riprendi dopo la ricarica" },
-      "do_not_disturb": { "name": "Non disturbare" }
+      "auto_empty": {
+        "name": "Svuotamento automatico"
+      },
+      "carpet_boost": {
+        "name": "Potenza extra sui tappeti"
+      },
+      "resume_after_charge": {
+        "name": "Riprendi dopo la ricarica"
+      },
+      "do_not_disturb": {
+        "name": "Non disturbare"
+      },
+      "away_cleaning": {
+        "name": "Pulizia quando esci"
+      },
+      "smart_cleaning": {
+        "name": "Stanze trascurate"
+      }
     },
     "button": {
-      "empty_bin": { "name": "Svuota contenitore" },
-      "reset_main_brush": { "name": "Azzera spazzola principale" },
-      "reset_side_brush": { "name": "Azzera spazzola laterale" },
-      "reset_filter": { "name": "Azzera filtro" },
-      "clean_selected_room": { "name": "Pulisci stanza selezionata" },
-      "refresh_map": { "name": "Rileggi mappa" }
+      "empty_bin": {
+        "name": "Svuota contenitore"
+      },
+      "reset_main_brush": {
+        "name": "Azzera spazzola principale"
+      },
+      "reset_side_brush": {
+        "name": "Azzera spazzola laterale"
+      },
+      "reset_filter": {
+        "name": "Azzera filtro"
+      },
+      "clean_selected_room": {
+        "name": "Pulisci stanza selezionata"
+      },
+      "refresh_map": {
+        "name": "Rileggi mappa"
+      }
+    },
+    "camera": {
+      "map": {
+        "name": "Mappa"
+      }
     }
   },
   "services": {
@@ -147,30 +276,84 @@
       "name": "Pulisci stanze",
       "description": "Pulisce una o più stanze, indicate per nome o numero.",
       "fields": {
-        "entity_id": { "name": "Robot", "description": "Il robot (facoltativo se ne hai uno solo)." },
-        "rooms": { "name": "Stanze", "description": "Elenco di nomi o numeri, es. [\"Cucina\", \"Bagno\"] oppure [4, 2]." },
-        "repeats": { "name": "Passate", "description": "Quante volte pulire ogni stanza (1-3)." },
-        "fan_speed": { "name": "Potenza", "description": "Se vuoto usa la potenza attuale." },
-        "water": { "name": "Acqua", "description": "Se vuoto usa il livello attuale." }
+        "entity_id": {
+          "name": "Robot",
+          "description": "Il robot (facoltativo se ne hai uno solo)."
+        },
+        "rooms": {
+          "name": "Stanze",
+          "description": "Elenco di nomi o numeri, es. [\"Cucina\", \"Bagno\"] oppure [4, 2]."
+        },
+        "repeats": {
+          "name": "Passate",
+          "description": "Quante volte pulire ogni stanza (1-3)."
+        },
+        "fan_speed": {
+          "name": "Potenza",
+          "description": "Se vuoto usa la potenza attuale."
+        },
+        "water": {
+          "name": "Acqua",
+          "description": "Se vuoto usa il livello attuale."
+        },
+        "source": {
+          "name": "Origine",
+          "description": "Testo libero che compare nello storico (es. 'Telegram')."
+        }
       }
     },
     "refresh_map": {
       "name": "Rileggi mappa",
       "description": "Chiede la mappa al robot e aggiorna i nomi delle stanze. Restituisce i dettagli della lettura.",
       "fields": {
-        "entity_id": { "name": "Robot", "description": "Il robot (facoltativo)." }
+        "entity_id": {
+          "name": "Robot",
+          "description": "Il robot (facoltativo)."
+        }
       }
     },
     "send_command": {
       "name": "Comando MIoT",
       "description": "Per prove e diagnosi: legge/scrive una proprietà o esegue un'azione e restituisce la risposta.",
       "fields": {
-        "entity_id": { "name": "Robot", "description": "Il robot (facoltativo)." },
-        "command": { "name": "Comando", "description": "get_properties, set_property o action." },
-        "siid": { "name": "siid", "description": "Numero del servizio." },
-        "id": { "name": "piid / aiid", "description": "Numero della proprietà o dell'azione." },
-        "value": { "name": "Valore", "description": "Per set_property." },
-        "params": { "name": "Parametri", "description": "Per action: lista di {piid, value}." }
+        "entity_id": {
+          "name": "Robot",
+          "description": "Il robot (facoltativo)."
+        },
+        "command": {
+          "name": "Comando",
+          "description": "get_properties, set_property o action."
+        },
+        "siid": {
+          "name": "siid",
+          "description": "Numero del servizio."
+        },
+        "id": {
+          "name": "piid / aiid",
+          "description": "Numero della proprietà o dell'azione."
+        },
+        "value": {
+          "name": "Valore",
+          "description": "Per set_property."
+        },
+        "params": {
+          "name": "Parametri",
+          "description": "Per action: lista di {piid, value}."
+        }
+      }
+    },
+    "clean_overdue": {
+      "name": "Pulisci stanze trascurate",
+      "description": "Pulisce subito le stanze trascurate (anche con l'interruttore spento). Con 'Solo elenco' restituisce le stanze senza avviare il robot.",
+      "fields": {
+        "entity_id": {
+          "name": "Robot",
+          "description": "Il robot (facoltativo)."
+        },
+        "dry_run": {
+          "name": "Solo elenco",
+          "description": "Non avvia il robot, restituisce solo l'elenco."
+        }
       }
     }
   }
