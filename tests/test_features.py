@@ -139,7 +139,11 @@ async def test_session_history_event_and_image(hass: HomeAssistant, robot, tmp_p
 
     assert events and events[0]["stanze"] == ["Cucina"]
     assert events[0]["area_m2"] == 6 and events[0]["durata_min"] == 9 and events[0]["avviata_da"] == "Telegram"
-    assert (tmp_path / "alfred_vacuum" / "ultima_pulizia.png").read_bytes()[:4] == b"\x89PNG"
+    saved = (tmp_path / "alfred_vacuum" / "ultima_pulizia.png").read_bytes()
+    assert saved[:4] == b"\x89PNG"
+    # foto di fine pulizia con la Cucina evidenziata; la mappa della dashboard resta normale
+    coordinator = entry.runtime_data.coordinator
+    assert coordinator.map_image and saved != coordinator.map_image
     assert entry.runtime_data.coordinator.history.last_cleaned("cucina") is not None
     assert hass.states.get("sensor.alfred_last_cleaning").attributes["stanze"] == ["Cucina"]
     assert hass.states.get("camera.alfred_map") is not None

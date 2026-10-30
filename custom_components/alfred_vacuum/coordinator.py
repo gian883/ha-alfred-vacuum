@@ -388,7 +388,7 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         finished = dt_util.utcnow()
         if rooms and session.max_area > 0:
             self.history.mark_cleaned(rooms, finished)
-        image_path = await self._save_image()
+        image_path = await self._save_image(await self._render_session(session, rooms))
         self.history.last_session = {
             "stanze": rooms,
             "area_m2": session.max_area,
@@ -403,15 +403,41 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         self.hass.bus.async_fire(EVENT_CLEANING_FINISHED, {"entry_id": self.entry.entry_id, **self.history.last_session})
         self.async_update_listeners()
 
-    async def _save_image(self) -> str | None:
-        if not self.map_image:
+    async def _render_session(self, session: CleaningSession, rooms: list[str]) -> bytes | None:
+        """Immagine di fine pulizia (Telegram): stanze pulite o zone evidenziate.
+
+        La mappa in dashboard torna normale; questa immagine si disegna a parte
+        perché a questo punto la sessione è già chiusa.
+        """
+        if not self.map:
+            return self.map_image
+        highlight: set[int] | None = None
+        if rooms and not session.zones and not (session.full and len(rooms) == len(self.rooms)):
+            highlight = set()
+            for name in rooms:
+                try:
+                    highlight.add(self.resolve_room(name))
+                except ValueError:
+                    continue
+        if not highlight and not session.zones:
+            return self.map_image
+        try:
+            image, _ = await self.hass.async_add_executor_job(render, self.map, self.rooms, highlight, session.zones)
+        except Exception:  # noqa: BLE001 - in caso di errore va bene la mappa normale
+            _LOGGER.exception("Disegno della mappa di fine pulizia non riuscito")
+            return self.map_image
+        return image
+
+    async def _save_image(self, image: bytes | None = None) -> str | None:
+        image = image or self.map_image
+        if not image:
             return None
         media = self.hass.config.media_dirs.get("local") or self.hass.config.path("media")
         path = Path(media) / MEDIA_SUBDIR / LAST_CLEAN_IMAGE
 
         def write() -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(self.map_image or b"")
+            path.write_bytes(image)
 
         try:
             await self.hass.async_add_executor_job(write)
