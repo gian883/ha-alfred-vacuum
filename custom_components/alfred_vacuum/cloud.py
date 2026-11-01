@@ -40,6 +40,24 @@ class CloudError(Exception):
     """Errore generico del cloud."""
 
 
+class CloudDeviceError(CloudError):
+    """Il cloud ha risposto, ma il robot ha rifiutato o non ha eseguito il comando."""
+
+
+def _check_codes(items: Any, what: str) -> None:
+    """Le risposte miotspec hanno un codice per ogni elemento: 0 o 1 = eseguito."""
+    if isinstance(items, dict):
+        items = [items]
+    if not isinstance(items, list):
+        return
+    for item in items:
+        if isinstance(item, dict):
+            code = item.get("code", 0)
+            if code not in (0, 1):
+                hint = " (robot non collegato al cloud)" if str(code).startswith("-70404201") else ""
+                raise CloudDeviceError(f"{what} rifiutato, codice {code}{hint}")
+
+
 class CloudAuthError(CloudError):
     """Credenziali errate o sessione scaduta."""
 
@@ -434,23 +452,32 @@ class XiaomiCloud:
             "miotspec/prop/get",
             {"params": [{"did": did, "siid": s, "piid": p} for s, p in props]},
         )
-        return {
+        values = {
             (r["siid"], r["piid"]): r["value"]
             for r in (result or [])
             if r.get("code", 0) == 0 and "value" in r
         }
+        if result and not values:
+            # nessuna proprietà letta: di solito il robot è offline per il cloud
+            _check_codes(result, "Lettura dello stato")
+            raise CloudDeviceError("Lettura dello stato: nessun valore")
+        return values
 
     async def set_property(self, did: str, prop: tuple[int, int], value: Any) -> None:
-        await self.api(
+        result = await self.api(
             "miotspec/prop/set",
             {"params": [{"did": did, "siid": prop[0], "piid": prop[1], "value": value}]},
         )
+        _check_codes(result, "Impostazione")
 
     async def action(self, did: str, action: tuple[int, int], ins: list[dict] | None = None) -> Any:
-        return await self.api(
+        result = await self.api(
             "miotspec/action",
             {"params": {"did": did, "siid": action[0], "aiid": action[1], "in": ins or []}},
         )
+        # prima il codice interno non veniva letto: un rifiuto del robot sembrava riuscito
+        _check_codes(result, "Comando")
+        return result
 
     async def get_file_url(self, object_name: str) -> str | None:
         """URL temporaneo del file mappa caricato dal robot (due indirizzi possibili)."""

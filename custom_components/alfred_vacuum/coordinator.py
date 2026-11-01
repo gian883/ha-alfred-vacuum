@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import Counter
 from dataclasses import dataclass, field
@@ -11,7 +12,8 @@ from typing import Any
 
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import CONF_HOST
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -47,6 +49,9 @@ _LOGGER = logging.getLogger(__name__)
 # Con l'intervallo predefinito (15 s) sono circa 1 minuto e mezzo: un singhiozzo del
 # Wi‑Fi o del cloud Xiaomi non fa sparire il robot da automazioni e Node-RED.
 MAX_MISSED_UPDATES = 6
+# dopo un comando di pulizia il robot deve lasciare la base entro questo tempo
+START_TIMEOUT = 60.0
+START_POLL = 5.0
 
 CLEANING_STATUSES = {1, 7, 12}
 HOME_STATUSES = {2, 6, 13}  # in attesa, in carica, carica completata
@@ -120,9 +125,41 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         self._map_attempts = 0
         self._map_busy = False
         self._missed_updates = 0
+        self.options_snapshot = dict(entry.options)
+        robot.on_host_changed = self._save_host
 
     async def async_setup(self) -> None:
         await self.history.async_load()
+
+    @callback
+    def _save_host(self, host: str) -> None:
+        """Salva il nuovo IP trovato in rete (senza ricaricare l'integrazione)."""
+        if self.entry.data.get(CONF_HOST) != host:
+            self.hass.config_entries.async_update_entry(self.entry, data={**self.entry.data, CONF_HOST: host})
+
+    @property
+    def connection(self) -> str:
+        """'locale', 'cloud' o 'assente': da dove arriva l'ultima risposta del robot."""
+        return {"local": "locale", "cloud": "cloud"}.get(self.robot.last_route, "assente")
+
+    async def _async_wait_start(self, what: str) -> None:
+        """Verifica che il robot sia davvero partito; altrimenti errore (prima falliva in silenzio)."""
+        if START_TIMEOUT <= 0:
+            return
+        waited = 0.0
+        while waited < START_TIMEOUT:
+            await asyncio.sleep(START_POLL)
+            waited += START_POLL
+            try:
+                status = (await self.robot.get_properties([P_STATUS])).get(P_STATUS)
+            except RobotError:
+                continue
+            if status is not None and status not in HOME_STATUSES:
+                return
+        raise RobotError(
+            f"{what}: comando inviato ma il robot è ancora alla base dopo {int(START_TIMEOUT)} s"
+            f" (collegamento: {self.connection})"
+        )
 
     @property
     def last_session(self) -> dict[str, Any] | None:
@@ -187,6 +224,7 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
         ids = [self.resolve_room(r) for r in rooms]
         names = [self.room_name(i) for i in ids]
         await self.robot.clean_rooms(ids, self.data or {}, repeats=repeats, fan=fan, water=water)
+        await self._async_wait_start("Pulizia " + ", ".join(names))
         if self.session:  # nuova richiesta durante una pulizia: aggiorno la sessione in corso
             self.session.requested, self.session.source, self.session.zones = names, source, None
             self._force_map = True
@@ -201,6 +239,7 @@ class AlfredCoordinator(DataUpdateCoordinator[dict[tuple[int, int], Any]]):
     ) -> None:
         """Pulisce dei rettangoli disegnati sulla mappa (coordinate del robot)."""
         await self.robot.clean_zones(zones, self.data or {}, repeats=repeats, fan=fan, water=water)
+        await self._async_wait_start("Pulizia a zona")
         zones = [[float(v) for v in zone[:4]] for zone in zones]
         if self.session:
             self.session.requested, self.session.zones, self.session.source = None, zones, source

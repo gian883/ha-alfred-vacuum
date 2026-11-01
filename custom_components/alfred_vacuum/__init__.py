@@ -99,6 +99,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlfredConfigEntry) -> bo
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: AlfredConfigEntry) -> None:
+    coordinator = entry.runtime_data.coordinator
+    if dict(entry.options) == coordinator.options_snapshot:
+        return  # cambiati solo i dati (es. nuovo IP trovato in rete): niente ricarica
     await hass.config_entries.async_reload(entry.entry_id)
 
 

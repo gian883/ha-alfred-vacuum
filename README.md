@@ -101,6 +101,7 @@ target:
 
 ## Versioni
 
+- **0.3.4** – se il robot non risponde al vecchio IP lo ritrova da solo sulla rete di casa (saluto miio in broadcast + scansione della sottorete, senza cloud) e salva il nuovo IP; i rifiuti del robot arrivati dal cloud ora sono errori; `clean_rooms`/`clean_zone` verificano che il robot lasci la base entro 60 s; nuovo sensore diagnostico *Collegamento* (locale/cloud/assente, con l'IP).
 - **0.3.3** – foto di fine pulizia (Telegram) con le stanze pulite evidenziate (contorno arancione, altre sbiadite) o le zone disegnate; la mappa in dashboard resta normale.
 - **0.3.2** – mappa: riconosce il formato dei pixel della mappa in uso (stanza × 4), quindi nomi giusti su tutte le stanze (prima la Cucina appariva come "Bagno" e le altre senza nome); durante la pulizia le stanze scelte sono evidenziate con il contorno arancione e le zone disegnate sulla mappa; nomi più grandi.
 - **0.3.1** – errori di rete del cloud (DNS, SSL, timeout) gestiti come errori del cloud; un guasto breve non rende più indisponibile il robot.

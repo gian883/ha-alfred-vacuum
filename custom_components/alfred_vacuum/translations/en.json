@@ -199,6 +199,9 @@
       },
       "last_cleaning": {
         "name": "Last cleaning"
+      },
+      "connection": {
+        "name": "Connection"
       }
     },
     "binary_sensor": {

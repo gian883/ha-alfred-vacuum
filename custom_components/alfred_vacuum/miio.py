@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import json
 import logging
 import struct
@@ -55,6 +56,67 @@ class _Protocol(asyncio.DatagramProtocol):
         _LOGGER.debug("Errore UDP: %s", exc)
 
 
+class _DiscoveryProtocol(asyncio.DatagramProtocol):
+    """Raccoglie le risposte al saluto: {id dispositivo: indirizzo IP}."""
+
+    def __init__(self, wanted: int) -> None:
+        self.wanted = wanted
+        self.found: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+
+    def datagram_received(self, data: bytes, addr: Any) -> None:
+        if len(data) < 32 or data[:2] != b"\x21\x31" or self.found.done():
+            return
+        device_id = struct.unpack(">I", data[8:12])[0]
+        if device_id == self.wanted:
+            self.found.set_result(addr[0])
+
+    def error_received(self, exc: Exception) -> None:
+        _LOGGER.debug("Errore UDP nella ricerca: %s", exc)
+
+
+async def discover(did: str | int, near: str | None = None, timeout: float = 4.0) -> str | None:
+    """Cerca il robot sulla rete locale e ne restituisce l'IP (None se non risponde).
+
+    Tutti i dispositivi miio rispondono al pacchetto di saluto con il proprio id:
+    lo mando in broadcast e, per le reti che filtrano il broadcast (mesh, Wi-Fi),
+    anche a ogni indirizzo della sottorete /24 dell'ultimo IP noto.
+    Nessun cloud, nessun login: solo rete di casa.
+    """
+    try:
+        wanted = int(did)
+    except (TypeError, ValueError):
+        return None
+    loop = asyncio.get_running_loop()
+    try:
+        transport, proto = await loop.create_datagram_endpoint(
+            lambda: _DiscoveryProtocol(wanted), local_addr=("0.0.0.0", 0), allow_broadcast=True
+        )
+    except OSError as err:
+        _LOGGER.debug("Ricerca del robot non avviabile: %s", err)
+        return None
+    try:
+        targets = ["255.255.255.255"]
+        if near:
+            try:
+                net = ipaddress.ip_network(f"{near}/24", strict=False)
+                targets += [str(ip) for ip in net.hosts()]
+            except ValueError:
+                pass
+        for _round in range(2):  # due giri: un pacchetto UDP perso non basta a mancarlo
+            for target in targets:
+                try:
+                    transport.sendto(HELLO, (target, PORT))
+                except OSError:
+                    continue
+            try:
+                return await asyncio.wait_for(asyncio.shield(proto.found), timeout / 2)
+            except TimeoutError:
+                continue
+        return None
+    finally:
+        transport.close()
+
+
 class MiioClient:
     """Invia comandi JSON al robot sulla rete locale."""
 
@@ -69,6 +131,11 @@ class MiioClient:
         self._stamp_at = 0.0
         self._msg_id = int(time.time()) % 10000
         self._lock = asyncio.Lock()
+
+    def set_host(self, host: str) -> None:
+        """Nuovo indirizzo del robot: la sessione va rifatta con un nuovo saluto."""
+        self.host = host
+        self._device_id = 0
 
     # --- cifratura -------------------------------------------------------
     def _encrypt(self, plain: bytes) -> bytes:

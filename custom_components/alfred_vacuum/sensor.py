@@ -135,6 +135,7 @@ async def async_setup_entry(
         AlfredCurrentRoomSensor(coordinator),
         AlfredOverdueSensor(coordinator, entry.runtime_data.smart),
         AlfredLastCleaningSensor(coordinator),
+        AlfredConnectionSensor(coordinator),
     ]
     async_add_entities(entities)
 
@@ -234,3 +235,29 @@ class AlfredLastCleaningSensor(AlfredEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return dict(self.coordinator.last_session or {})
+
+
+class AlfredConnectionSensor(AlfredEntity, SensorEntity):
+    """Da dove risponde il robot: locale (normale), cloud (ripiego) o assente."""
+
+    _attr_icon = "mdi:lan-connect"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["locale", "cloud", "assente"]
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "connection")
+
+    @property
+    def available(self) -> bool:
+        return True  # deve dire "assente" proprio quando il robot non risponde
+
+    @property
+    def native_value(self) -> str:
+        if not self.coordinator.last_update_success:
+            return "assente"
+        return self.coordinator.connection
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"indirizzo_ip": self.coordinator.robot.host}

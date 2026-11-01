@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from collections.abc import Callable
 from typing import Any
 
-from .cloud import CloudError, XiaomiCloud
+from .cloud import CloudDeviceError, CloudError, XiaomiCloud
 from .const import (
     A_AREA_CLEAN,
     A_MAP_REQUEST,
@@ -24,9 +26,12 @@ from .const import (
     WORK_MODE_ZONE,
 )
 from .map_decoder import MapData, MapDecodeError, decode
-from .miio import MiioClient, MiioDeviceError, MiioError
+from .miio import MiioClient, MiioDeviceError, MiioError, MiioTimeout, discover
 
 _LOGGER = logging.getLogger(__name__)
+
+# dopo una ricerca senza esito aspetto prima di riprovare (la ricerca costa ~4 s)
+DISCOVERY_COOLDOWN = 300.0
 
 
 class RobotError(Exception):
@@ -41,13 +46,50 @@ class AlfredRobot:
         self.local = local
         self.cloud = cloud
         self.last_route = "local"
+        self.on_host_changed: Callable[[str], None] | None = None
+        self._last_discovery = 0.0
+
+    @property
+    def host(self) -> str | None:
+        return self.local.host if self.local else None
 
     # --- instradamento ---------------------------------------------------
+    async def _local(self, name: str, *args: Any) -> Any:
+        assert self.local
+        try:
+            return await getattr(self.local, name)(self.did, *args)
+        except MiioTimeout:
+            # il robot non risponde: forse il router gli ha dato un altro IP
+            if not await self.async_rediscover():
+                raise
+            return await getattr(self.local, name)(self.did, *args)
+
+    async def async_rediscover(self, force: bool = False) -> bool:
+        """Cerca il robot sulla rete di casa; True se l'ha trovato a un IP nuovo."""
+        if not self.local:
+            return False
+        now = time.monotonic()
+        if not force and now - self._last_discovery < DISCOVERY_COOLDOWN:
+            return False
+        self._last_discovery = now
+        old = self.local.host
+        new = await discover(self.did, near=old)
+        if not new:
+            _LOGGER.debug("Ricerca locale: il robot non ha risposto")
+            return False
+        if new == old:
+            return False
+        _LOGGER.warning("Robot trovato a un nuovo indirizzo: %s (prima %s)", new, old)
+        self.local.set_host(new)
+        if self.on_host_changed:
+            self.on_host_changed(new)
+        return True
+
     async def _call(self, name: str, *args: Any) -> Any:
         errors: list[str] = []
         if self.local:
             try:
-                result = await getattr(self.local, name)(self.did, *args)
+                result = await self._local(name, *args)
                 self.last_route = "local"
                 return result
             except MiioDeviceError as err:
@@ -59,8 +101,12 @@ class AlfredRobot:
                 result = await getattr(self.cloud, name)(self.did, *args)
                 self.last_route = "cloud"
                 return result
+            except CloudDeviceError as err:
+                self.last_route = "cloud"
+                raise RobotError(f"Il robot ha rifiutato il comando dal cloud ({err})") from err
             except CloudError as err:
                 errors.append(f"cloud: {err}")
+        self.last_route = "none"
         raise RobotError("; ".join(errors) or "Nessun collegamento disponibile")
 
     async def get_properties(self, props: list[tuple[int, int]] | None = None) -> dict[tuple[int, int], Any]:

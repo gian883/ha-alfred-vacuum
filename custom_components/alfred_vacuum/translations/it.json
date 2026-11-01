@@ -199,6 +199,9 @@
       },
       "last_cleaning": {
         "name": "Ultima pulizia"
+      },
+      "connection": {
+        "name": "Collegamento"
       }
     },
     "binary_sensor": {
