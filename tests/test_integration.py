@@ -78,7 +78,7 @@ def _entry() -> MockConfigEntry:
         title="ALFRED",
         unique_id="123",
         data={
-            CONF_DID: "123", CONF_HOST: "192.168.5.80", CONF_TOKEN: "00" * 16,
+            CONF_DID: "123", CONF_HOST: "192.168.0.80", CONF_TOKEN: "00" * 16,
             CONF_CLOUD: True, CONF_COUNTRY: "de", CONF_USER_ID: "1", CONF_SERVICE_TOKEN: "t", CONF_SSECURITY: "cw==",
         },
     )
@@ -145,7 +145,7 @@ async def test_setup_entities_and_rooms(hass: HomeAssistant, fake_robot) -> None
 async def test_config_flow_cloud_with_2fa(hass: HomeAssistant) -> None:
     session = CloudSession("1", "tok", "cw==", "de")
     devices = [
-        {"did": "999", "model": "dreame.vacuum.r2205", "name": "ALFRED", "localip": "192.168.5.80", "token": "ab" * 16},
+        {"did": "999", "model": "dreame.vacuum.r2205", "name": "ALFRED", "localip": "192.168.0.80", "token": "ab" * 16},
         {"did": "555", "model": "yeelink.light", "name": "Lampada"},
     ]
     with (
@@ -164,7 +164,7 @@ async def test_config_flow_cloud_with_2fa(hass: HomeAssistant) -> None:
         assert result["description_placeholders"]["target"] == "g***@gmail.com"
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {"code": "123456"})
         assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert result["data"][CONF_HOST] == "192.168.5.80"
+        assert result["data"][CONF_HOST] == "192.168.0.80"
         assert "password" not in result["data"]  # la password non viene salvata
         assert result["title"] == "ALFRED"
 

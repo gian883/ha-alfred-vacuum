@@ -19,7 +19,7 @@ from custom_components.alfred_vacuum.miio import MiioClient, MiioTimeout
 
 from .test_integration import STATE, _entry, fake_robot  # noqa: F401 - fixture riusata
 
-DID = 722722960
+DID = 123456789
 
 
 @pytest.fixture(autouse=True)
@@ -57,20 +57,20 @@ async def test_discover_finds_robot_by_id() -> None:
 
 async def test_timeout_triggers_rediscovery_and_retry(no_real_network) -> None:
     """Robot muto al vecchio IP: lo ritrova al nuovo, salva l'IP e ripete il comando lì."""
-    no_real_network.return_value = "192.168.5.81"
-    local = MiioClient("192.168.5.80", "00" * 16)
+    no_real_network.return_value = "192.168.0.81"
+    local = MiioClient("192.168.0.80", "00" * 16)
     robot = AlfredRobot(str(DID), local, None)
     saved: list[str] = []
     robot.on_host_changed = saved.append
 
     async def get_properties(self, did, props):
-        if self.host == "192.168.5.80":
-            raise MiioTimeout("Nessuna risposta da 192.168.5.80")
+        if self.host == "192.168.0.80":
+            raise MiioTimeout("Nessuna risposta da 192.168.0.80")
         return {(3, 1): 90}
 
     with patch.object(MiioClient, "get_properties", get_properties):
         assert await robot.get_properties([(3, 1)]) == {(3, 1): 90}
-    assert robot.host == "192.168.5.81" and saved == ["192.168.5.81"]
+    assert robot.host == "192.168.0.81" and saved == ["192.168.0.81"]
     assert robot.last_route == "local"
     no_real_network.assert_awaited_once()
 
@@ -143,12 +143,12 @@ async def test_new_ip_saved_without_reload(hass: HomeAssistant, fake_robot, no_r
     coordinator = entry.runtime_data.coordinator
     assert hass.states.get("sensor.alfred_connection").state == "locale"
 
-    no_real_network.return_value = "192.168.5.81"
+    no_real_network.return_value = "192.168.0.81"
     real = MiioClient.get_properties
 
     async def moved(self, did, props):
-        if self.host == "192.168.5.80":
-            raise MiioTimeout("Nessuna risposta da 192.168.5.80")
+        if self.host == "192.168.0.80":
+            raise MiioTimeout("Nessuna risposta da 192.168.0.80")
         return await real(self, did, props)
 
     with (
@@ -157,11 +157,11 @@ async def test_new_ip_saved_without_reload(hass: HomeAssistant, fake_robot, no_r
     ):
         await coordinator.async_refresh()
         await hass.async_block_till_done()
-    assert entry.data[CONF_HOST] == "192.168.5.81"
+    assert entry.data[CONF_HOST] == "192.168.0.81"
     reload.assert_not_called()
     assert entry.runtime_data.coordinator is coordinator
     state = hass.states.get("sensor.alfred_connection")
-    assert state.state == "locale" and state.attributes["indirizzo_ip"] == "192.168.5.81"
+    assert state.state == "locale" and state.attributes["indirizzo_ip"] == "192.168.0.81"
 
 
 DOMAIN_ = "alfred_vacuum"
